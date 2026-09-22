@@ -1,0 +1,686 @@
+// Prisma schema for the Tennis App backend.
+// Domain: clubs, court booking, partner-finding, match recording/scoring,
+// and competitions with bracket progression.
+//
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// NOTE (Prisma 7): the connection URL is no longer set here. It is read from
+// DATABASE_URL by prisma7.config.ts (used by the CLI/Migrate) and passed to
+// PrismaClient at runtime via a driver adapter (see PrismaService).
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  PLAYER
+  ADMIN
+}
+
+enum PremiumTier {
+  FREE
+  PREMIUM
+}
+
+enum PlayerLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+// Whether other players can count on this player right now.
+enum AvailabilityStatus {
+  AVAILABLE
+  LOOKING_FOR_MATCH
+  BUSY
+  INJURED
+  ON_VACATION
+  UNAVAILABLE
+}
+
+enum DominantHand {
+  RIGHT
+  LEFT
+}
+
+enum Backhand {
+  ONE_HANDED
+  TWO_HANDED
+}
+
+enum PhoneLabel {
+  MOBILE
+  WHATSAPP
+  WORK
+  HOME
+  OTHER
+}
+
+enum Surface {
+  HARD
+  CLAY
+  GRASS
+  INDOOR
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum MatchType {
+  SINGLES
+  DOUBLES
+}
+
+enum PartnerRequestStatus {
+  OPEN
+  MATCHED
+  CANCELLED
+}
+
+enum CandidateStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum RecordedMatchType {
+  TRAINING
+  FRIENDLY
+  OFFICIAL
+}
+
+enum MatchStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  // Ended early (retirement, rain, ...) — may or may not have a winner.
+  UNFINISHED
+}
+
+enum PlayerSide {
+  PLAYER1
+  PLAYER2
+}
+
+// How the deciding set is played.
+enum FinalSetFormat {
+  TIEBREAK
+  SUPER_TIEBREAK
+  ADVANTAGE
+}
+
+enum CompetitionFormat {
+  SINGLE_ELIMINATION
+  ROUND_ROBIN
+}
+
+enum CompetitionStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+}
+
+enum StoryKind {
+  TOURNAMENT
+  NEWS
+  TIP
+  CLUB
+}
+
+enum CompetitionMatchStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  BYE
+}
+
+enum ProductCondition {
+  NEW
+  USED
+}
+
+enum ProductStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  REMOVED
+}
+
+enum PurchaseRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum FavoriteTargetType {
+  CLUB
+  PLAYER
+  COMPETITION
+}
+
+// Mirrors the app's notification icons/filters; SYSTEM is the catch-all.
+enum NotificationType {
+  BOOKING
+  TOURNAMENT
+  MATCH
+  MARKETPLACE
+  SYSTEM
+}
+
+// ---------------------------------------------------------------------------
+// Identity & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  passwordHash String
+  firstname    String
+  lastname     String
+  msisdn       String      @unique
+  role         Role        @default(PLAYER)
+  premiumTier  PremiumTier @default(FREE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  playerProfile PlayerProfile?
+  // Extra numbers on top of the primary `msisdn`.
+  phones        UserPhone[]
+
+  bookings               Booking[]
+  partnerRequests        PartnerRequest[]
+  matchesAsPlayer1       Match[]                  @relation("MatchPlayer1")
+  matchesAsPlayer2       Match[]                  @relation("MatchPlayer2")
+  matchesWon             Match[]                  @relation("MatchWinner")
+  competitionParticipant CompetitionParticipant[]
+  favorites              Favorite[]
+  notifications          Notification[]
+  refreshTokens          RefreshToken[]
+  partnerMatchCandidates PartnerMatchCandidate[]
+  products               Product[]
+  purchaseRequests       PurchaseRequest[]
+}
+
+// Multi-device refresh token revocation, used by the auth module.
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PlayerProfile {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  level            PlayerLevel
+  ntrpRating       Float?
+  preferredSurface Surface?
+  bio              String?
+  avatarUrl        String?
+  city             String?
+  dominantHand     DominantHand?
+  backhand         Backhand?
+  availabilityStatus AvailabilityStatus @default(AVAILABLE)
+  // Short free text shown next to the status ("Back on court mid-October").
+  availabilityNote String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Additional contact numbers. The user's primary number stays in
+// `User.msisdn`; "make primary" swaps the two inside a transaction.
+model UserPhone {
+  id        String     @id @default(cuid())
+  userId    String
+  // Normalized: optional leading "+" then digits only.
+  number    String     @unique
+  label     PhoneLabel @default(MOBILE)
+  createdAt DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Geography & clubs & courts:  Country -> City -> Club -> Court
+// ---------------------------------------------------------------------------
+
+model Country {
+  id        String   @id @default(cuid())
+  // ISO 3166-1 alpha-2, upper case ("SN").
+  code      String   @unique
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cities City[]
+}
+
+model City {
+  id        String   @id @default(cuid())
+  name      String
+  countryId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Restrict)
+  clubs   Club[]
+  courts  Court[]
+
+  @@unique([countryId, name])
+  @@index([countryId])
+}
+
+model Club {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  logoUrl       String?
+  bannerUrl     String?
+  photos        String[] @default([])
+  address       String
+  cityId        String
+  latitude      Float?
+  longitude     Float?
+  phone         String?
+  email         String?
+  openingHours  Json?
+  amenities     String[] @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  city          City          @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  courts        Court[]
+  bookings      Booking[]
+  competitions  Competition[]
+  matches       Match[]
+
+  // Lets Court reference (id, cityId) so a court's city can never differ from
+  // its club's city — see Court.club.
+  @@unique([id, cityId])
+  @@index([cityId])
+}
+
+model Court {
+  id           String   @id @default(cuid())
+  clubId       String
+  // Always the club's city (enforced by the composite foreign key below);
+  // kept on the court so courts can be queried by city directly.
+  cityId       String
+  name         String
+  surface      Surface
+  indoor       Boolean  @default(false)
+  pricePerHour Decimal? @db.Decimal(10, 2)
+  photos       String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  club     Club      @relation(fields: [clubId, cityId], references: [id, cityId], onDelete: Cascade, onUpdate: Cascade)
+  city     City      @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  bookings Booking[]
+  matches  Match[]
+  competitionMatches CompetitionMatch[]
+
+  @@index([clubId])
+  @@index([cityId])
+}
+
+// Overlap-prevention (a court cannot be double-booked for intersecting time
+// ranges) is enforced at the service layer, not the database: Prisma does not
+// support Postgres exclusion constraints (EXCLUDE USING gist) natively.
+model Booking {
+  id                String        @id @default(cuid())
+  courtId           String
+  userId            String
+  startTime         DateTime
+  endTime           DateTime
+  status            BookingStatus @default(PENDING)
+  price             Decimal?      @db.Decimal(10, 2)
+  lookingForPartner Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club  Club? @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  clubId String?
+
+  @@index([courtId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Partner finding
+// ---------------------------------------------------------------------------
+
+model PartnerRequest {
+  id        String                @id @default(cuid())
+  userId    String
+  clubId    String?
+  date      DateTime
+  startTime DateTime
+  endTime   DateTime
+  levelMin  PlayerLevel?
+  levelMax  PlayerLevel?
+  matchType MatchType
+  status    PartnerRequestStatus  @default(OPEN)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidates PartnerMatchCandidate[]
+
+  @@index([userId])
+}
+
+model PartnerMatchCandidate {
+  id               String           @id @default(cuid())
+  requestId        String
+  respondentUserId String
+  status           CandidateStatus  @default(PENDING)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  request         PartnerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  respondentUser  User           @relation(fields: [respondentUserId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, respondentUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Match recording & scoring
+// ---------------------------------------------------------------------------
+
+model Match {
+  id        String            @id @default(cuid())
+  // player1 is always the user who recorded the match.
+  player1Id String
+  // Registered opponent; null for a guest ("player2Name") or an unknown one.
+  player2Id String?
+  player2Name String?
+  clubId    String?
+  courtId   String?
+  location  String?
+  playedAt  DateTime
+  startedAt DateTime?
+  endedAt   DateTime?
+  // Wall-clock length vs. time the ball was actually in play (pauses and
+  // side-change breaks excluded).
+  totalSeconds Int?
+  playSeconds  Int?
+  player1Points Int?
+  player2Points Int?
+  bestOf    Int               @default(3)
+  noAd      Boolean           @default(false)
+  finalSet  FinalSetFormat    @default(TIEBREAK)
+  surface   Surface?
+  matchType RecordedMatchType
+  status    MatchStatus       @default(SCHEDULED)
+  winnerId  String?
+  winnerSide PlayerSide?
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  player1 User  @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
+  player2 User? @relation("MatchPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
+  winner  User? @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  club    Club? @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  court   Court? @relation(fields: [courtId], references: [id], onDelete: SetNull)
+
+  sets                MatchSet[]
+  linkedCompetitionMatch CompetitionMatch?
+
+  @@index([player1Id, playedAt])
+  @@index([player2Id, playedAt])
+}
+
+model MatchSet {
+  id                    String   @id @default(cuid())
+  matchId               String
+  setNumber             Int
+  player1Games          Int
+  player2Games          Int
+  isTiebreak            Boolean  @default(false)
+  // A match tiebreak (to 10) played instead of a deciding set: games are
+  // recorded as 1-0 and the points live in the tiebreak fields.
+  isSuperTiebreak       Boolean  @default(false)
+  tiebreakPlayer1Points Int?
+  tiebreakPlayer2Points Int?
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, setNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Competitions & bracket progression
+//
+// "Competition" is what the app calls a TOURNAMENT (screens, routes and the
+// Dart model all say tournament; the API path is /competitions). Tables:
+// Competition, CompetitionParticipant (registrations), CompetitionRound and
+// CompetitionMatch (bracket — modelled but not yet populated or exposed).
+// ---------------------------------------------------------------------------
+
+model Competition {
+  id        String            @id @default(cuid())
+  name      String
+  bannerUrl String?
+  clubId    String?
+  location  String?
+  startDate DateTime
+  endDate   DateTime
+  category  String?
+  surface   Surface?
+  format    CompetitionFormat
+  status    CompetitionStatus @default(UPCOMING)
+  description String?
+  // Highlighted first on the Home tab.
+  featured  Boolean           @default(false)
+  maxParticipants Int?
+  entryFee  Decimal?          @db.Decimal(12, 2)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  club         Club?                     @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  participants CompetitionParticipant[]
+  rounds       CompetitionRound[]
+}
+
+model CompetitionParticipant {
+  id            String @id @default(cuid())
+  competitionId String
+  userId        String
+  seed          Int?
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  matchesAsParticipant1 CompetitionMatch[] @relation("CompetitionMatchParticipant1")
+  matchesAsParticipant2 CompetitionMatch[] @relation("CompetitionMatchParticipant2")
+  matchesWon            CompetitionMatch[] @relation("CompetitionMatchWinner")
+
+  @@unique([competitionId, userId])
+}
+
+model CompetitionRound {
+  id            String @id @default(cuid())
+  competitionId String
+  name          String
+  orderIndex    Int
+
+  competition Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  matches     CompetitionMatch[]
+
+  @@index([competitionId])
+}
+
+// Detailed set-by-set scoring for a CompetitionMatch is not duplicated here:
+// when present, `linkedMatchId` points to a full Match record (with its
+// MatchSet rows) so the Match/MatchSet tables remain the single source of
+// truth for scores.
+model CompetitionMatch {
+  id             String                  @id @default(cuid())
+  roundId        String
+  participant1Id String?
+  participant2Id String?
+  winnerId       String?
+  status         CompetitionMatchStatus  @default(SCHEDULED)
+  scheduledAt    DateTime?
+  courtId        String?
+  nextMatchId    String?
+  linkedMatchId  String?                 @unique
+
+  round        CompetitionRound        @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  participant1 CompetitionParticipant? @relation("CompetitionMatchParticipant1", fields: [participant1Id], references: [id], onDelete: SetNull)
+  participant2 CompetitionParticipant? @relation("CompetitionMatchParticipant2", fields: [participant2Id], references: [id], onDelete: SetNull)
+  winner       CompetitionParticipant? @relation("CompetitionMatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  court        Court?                  @relation(fields: [courtId], references: [id], onDelete: SetNull)
+
+  // Self-relation for bracket progression: the winner of this match advances
+  // into `nextMatch`. Many matches (e.g. both semifinals) can feed into the
+  // same `nextMatch`, so this is many-to-one, not one-to-one.
+  nextMatch      CompetitionMatch?  @relation("BracketProgression", fields: [nextMatchId], references: [id], onDelete: SetNull)
+  previousMatches CompetitionMatch[] @relation("BracketProgression")
+
+  linkedMatch Match? @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
+
+  @@index([roundId])
+}
+
+// ---------------------------------------------------------------------------
+// Stories (Home tab): short, swipeable highlights that expire.
+// ---------------------------------------------------------------------------
+
+// `slides` is a JSON array of
+// { imageUrl, headline, body?, ctaLabel?, route? } — the app renders them as
+// full-screen frames; `route` is an in-app path opened by the call-to-action.
+// "Seen" state lives on the device, not here.
+model Story {
+  id          String    @id @default(cuid())
+  title       String
+  kind        StoryKind
+  coverUrl    String
+  slides      Json
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Favorites & notifications
+// ---------------------------------------------------------------------------
+
+// targetId is intentionally not a foreign key: it is a polymorphic reference
+// (Club | PlayerProfile | Competition id) validated at the service layer.
+model Favorite {
+  id         String             @id @default(cuid())
+  userId     String
+  targetType FavoriteTargetType
+  targetId   String
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  // `{ route?: string }` — the in-app path the notification opens.
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace (second-hand / new tennis gear)
+// ---------------------------------------------------------------------------
+
+// Reference data for the marketplace: one row per category the app can filter
+// and sell in. Labels, icons and order are owned here, not in the client.
+model ProductCategory {
+  id        String   @id @default(cuid())
+  // Stable machine key the API sends and accepts ("RACKET").
+  code      String   @unique
+  label     String
+  // Icon slug the app maps to a glyph ("racket").
+  icon      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+}
+
+model Product {
+  id          String           @id @default(cuid())
+  sellerId    String
+  title       String
+  description String?
+  price       Decimal          @db.Decimal(12, 2)
+  categoryId  String
+  condition   ProductCondition
+  status      ProductStatus    @default(AVAILABLE)
+  photos      String[]         @default([])
+  city        String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  seller   User              @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  category ProductCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  requests PurchaseRequest[]
+
+  @@index([status, categoryId, condition, createdAt])
+  @@index([sellerId])
+}
+
+model PurchaseRequest {
+  id        String                @id @default(cuid())
+  productId String
+  buyerId   String
+  message   String?
+  status    PurchaseRequestStatus @default(PENDING)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  buyer   User    @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([productId, status])
+  @@index([buyerId])
+}

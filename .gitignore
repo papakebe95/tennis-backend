@@ -1,0 +1,31 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+*.tsbuildinfo
+
+# Keep environment variables out of version control
+.env
+.env.local
+.env.*.local
+
+# Prisma
+/generated/prisma
+
+# Test coverage
+coverage
+
+# Logs
+*.log
+npm-debug.log*
+
+# User uploads (runtime data, not source)
+uploads/*
+!uploads/.gitkeep
+!uploads/*/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
