@@ -1,9 +1,7 @@
-import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 // Type-only import: pulls in @types/multer's `declare global { namespace
 // Express { namespace Multer { ... } } }` augmentation so Express.Multer.File
 // resolves below, without a runtime `require('multer')`. The project's
@@ -27,15 +25,28 @@ export interface SavedUpload {
   path: string;
 }
 
-// Local-disk implementation of file storage. Everything storage-specific
-// (where bytes land, how the URL is built) lives in this one class - swapping
-// to S3/Cloudinary later means replacing this class's internals, not
-// touching UploadsController or any other caller.
+// Cloudflare R2 (S3-compatible) implementation of file storage. Everything
+// storage-specific (where bytes land, how the URL is built) lives in this one
+// class - swapping providers later means replacing this class's internals,
+// not touching UploadsController or any other caller.
 @Injectable()
 export class UploadsService {
-  private readonly uploadsRoot = join(process.cwd(), 'uploads');
+  private readonly client: S3Client;
+  private readonly bucket: string;
+  private readonly publicUrl: string;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {
+    this.bucket = this.configService.getOrThrow<string>('R2_BUCKET_NAME');
+    this.publicUrl = this.configService.getOrThrow<string>('R2_PUBLIC_URL').replace(/\/$/, '');
+    this.client = new S3Client({
+      region: 'auto',
+      endpoint: this.configService.getOrThrow<string>('R2_ENDPOINT'),
+      credentials: {
+        accessKeyId: this.configService.getOrThrow<string>('R2_ACCESS_KEY_ID'),
+        secretAccessKey: this.configService.getOrThrow<string>('R2_SECRET_ACCESS_KEY'),
+      },
+    });
+  }
 
   async save(file: Express.Multer.File, folder: string): Promise<SavedUpload> {
     if (!file) {
@@ -55,22 +66,20 @@ export class UploadsService {
       );
     }
 
-    const targetDir = join(this.uploadsRoot, folder);
-    if (!existsSync(targetDir)) {
-      await mkdir(targetDir, { recursive: true });
-    }
+    const key = `${folder}/${randomUUID()}.${extension}`;
 
-    const filename = `${randomUUID()}.${extension}`;
-    const diskPath = join(targetDir, filename);
-    await writeFile(diskPath, file.buffer);
-
-    const baseUrl =
-      this.configService.get<string>('APP_BASE_URL') ??
-      `http://localhost:${this.configService.get<string>('PORT') ?? 3000}`;
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
 
     return {
-      url: `${baseUrl}/uploads/${folder}/${filename}`,
-      path: diskPath,
+      url: `${this.publicUrl}/${key}`,
+      path: key,
     };
   }
 }
