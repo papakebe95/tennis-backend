@@ -137,8 +137,14 @@ const TENNIS_PHOTO_IDS = [
   '1620742820748-87c09249a72a',
 ];
 
+// Seed photos are mirrored in our R2 bucket under seed/ (originally sourced
+// from Unsplash), so seeded data doesn't depend on a third-party host.
+const R2_PUBLIC_URL = (
+  process.env.R2_PUBLIC_URL ?? 'https://pub-40b3d89b0df9456088de3896732855cd.r2.dev'
+).replace(/\/$/, '');
+
 function unsplashUrl(id: string, width: number, height: number): string {
-  return `https://images.unsplash.com/photo-${id}?w=${width}&h=${height}&fit=crop&q=80&auto=format`;
+  return `${R2_PUBLIC_URL}/seed/photo-${id}-${width}x${height}.jpg`;
 }
 
 // Deterministic pseudo-random pick from a string so re-seeding always
