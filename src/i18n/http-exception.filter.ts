@@ -3,6 +3,7 @@ import {
   Catch,
   ExceptionFilter,
   HttpException,
+  Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { t, type MessageKey } from './i18n.js';
@@ -16,11 +17,28 @@ const DEFAULT_MESSAGES: Record<string, MessageKey> = {
   'Internal Server Error': 'errors.http.internal',
 };
 
-/** Translates those default messages; every other exception passes through. */
-@Catch(HttpException)
-export class LocalizedHttpExceptionFilter implements ExceptionFilter {
-  catch(exception: HttpException, host: ArgumentsHost) {
+/**
+ * Translates Nest's default messages and unexpected failures; every other
+ * exception (the ones services throw with `t()` already applied) passes
+ * through untouched.
+ */
+@Catch()
+export class LocalizedExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('ExceptionsHandler');
+
+  catch(exception: unknown, host: ArgumentsHost) {
     const response = host.switchToHttp().getResponse<Response>();
+
+    if (!(exception instanceof HttpException)) {
+      this.logger.error(
+        exception instanceof Error ? exception.stack : String(exception),
+      );
+      response
+        .status(500)
+        .json({ statusCode: 500, message: t('errors.http.unexpected') });
+      return;
+    }
+
     const status = exception.getStatus();
     const body = exception.getResponse();
     const payload: Record<string, unknown> =

@@ -162,6 +162,13 @@ describe('notification translation', () => {
     expect(renderNotification(key!, params!, 'en').body).toMatch(/Mon/);
   });
 
+  it('words the seeded demo notifications in French', () => {
+    expect(renderNotification('welcome', {}, 'fr').title).toBe(
+      'Bienvenue au club',
+    );
+    expect(renderNotification('niceWin', {}, 'en').title).toBe('Nice win!');
+  });
+
   it('words a match outcome in French', () => {
     const sets = [{ me: 3, opp: 6, superTiebreak: false, tiebreak: null }];
     const { key, params } = matchRecorded('m1', 'Awa Diop', 'LOSS', sets);

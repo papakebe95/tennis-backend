@@ -10,6 +10,7 @@ export const en = {
       forbidden: 'Forbidden',
       notFound: 'Not Found',
       internal: 'Internal Server Error',
+      unexpected: 'Internal server error',
     },
     auth: {
       invalidCredentials: 'Invalid credentials',
@@ -143,6 +144,26 @@ export const en = {
     tournamentRegistered: {
       title: "You're in!",
       body: 'Your registration for {name} is confirmed.',
+    },
+    registrationOpen: {
+      title: 'Registration is open',
+      body: 'Dakar Open Amateur starts in a week — grab your spot.',
+    },
+    niceWin: {
+      title: 'Nice win!',
+      body: 'Your last match earned you season points. See where you stand.',
+    },
+    courtReminder: {
+      title: 'Court reminder',
+      body: 'Bookings are easier to keep with a partner — invite someone.',
+    },
+    newGear: {
+      title: 'New gear near you',
+      body: 'Fresh rackets and shoes were just listed in the market.',
+    },
+    welcome: {
+      title: 'Welcome to the club',
+      body: 'Book courts, score your matches and climb the season ranking.',
     },
     matchRecorded: {
       title: 'Match added to your history',

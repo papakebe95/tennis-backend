@@ -1365,11 +1365,11 @@ async function seedHome() {
     const now = Date.now();
     await prisma.notification.createMany({
       data: [
-        { type: NotificationType.TOURNAMENT, title: 'Registration is open', body: 'Dakar Open Amateur starts in a week — grab your spot.', data: { route: `/tournaments/${competitionIds['dakar-open']}` }, createdAt: new Date(now - 1 * HOUR_MS) },
-        { type: NotificationType.MATCH, title: 'Nice win!', body: 'Your last match earned you season points. See where you stand.', data: { route: '/profile' }, createdAt: new Date(now - 5 * HOUR_MS) },
-        { type: NotificationType.BOOKING, title: 'Court reminder', body: 'Bookings are easier to keep with a partner — invite someone.', data: { route: '/club/bookings' }, createdAt: new Date(now - 26 * HOUR_MS) },
-        { type: NotificationType.MARKETPLACE, title: 'New gear near you', body: 'Fresh rackets and shoes were just listed in the market.', data: { route: '/marketplace' }, read: true, createdAt: new Date(now - 3 * DAY_MS) },
-        { type: NotificationType.SYSTEM, title: 'Welcome to the club', body: 'Book courts, score your matches and climb the season ranking.', read: true, createdAt: new Date(now - 6 * DAY_MS) },
+        { type: NotificationType.TOURNAMENT, messageKey: 'registrationOpen', title: 'Registration is open', body: 'Dakar Open Amateur starts in a week — grab your spot.', data: { route: `/tournaments/${competitionIds['dakar-open']}` }, createdAt: new Date(now - 1 * HOUR_MS) },
+        { type: NotificationType.MATCH, messageKey: 'niceWin', title: 'Nice win!', body: 'Your last match earned you season points. See where you stand.', data: { route: '/profile' }, createdAt: new Date(now - 5 * HOUR_MS) },
+        { type: NotificationType.BOOKING, messageKey: 'courtReminder', title: 'Court reminder', body: 'Bookings are easier to keep with a partner — invite someone.', data: { route: '/club/bookings' }, createdAt: new Date(now - 26 * HOUR_MS) },
+        { type: NotificationType.MARKETPLACE, messageKey: 'newGear', title: 'New gear near you', body: 'Fresh rackets and shoes were just listed in the market.', data: { route: '/marketplace' }, read: true, createdAt: new Date(now - 3 * DAY_MS) },
+        { type: NotificationType.SYSTEM, messageKey: 'welcome', title: 'Welcome to the club', body: 'Book courts, score your matches and climb the season ranking.', read: true, createdAt: new Date(now - 6 * DAY_MS) },
       ].map((n) => ({ ...n, userId: user.id })),
     });
     notified++;

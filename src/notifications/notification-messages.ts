@@ -15,6 +15,11 @@ export type NotificationKey =
   | 'purchaseRequestAccepted'
   | 'purchaseRequestDeclined'
   | 'tournamentRegistered'
+  | 'registrationOpen'
+  | 'niceWin'
+  | 'courtReminder'
+  | 'newGear'
+  | 'welcome'
   | 'matchRecorded';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */

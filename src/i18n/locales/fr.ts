@@ -7,6 +7,7 @@ export const fr: Messages = {
       forbidden: "Vous n'êtes pas autorisé à faire cela",
       notFound: 'Introuvable',
       internal: 'Une erreur est survenue, veuillez réessayer',
+      unexpected: 'Une erreur est survenue, veuillez réessayer',
     },
     auth: {
       invalidCredentials: 'Identifiants invalides',
@@ -141,6 +142,26 @@ export const fr: Messages = {
     tournamentRegistered: {
       title: 'Vous êtes inscrit !',
       body: 'Votre inscription à {name} est confirmée.',
+    },
+    registrationOpen: {
+      title: 'Les inscriptions sont ouvertes',
+      body: 'Le Dakar Open Amateur commence dans une semaine — réservez votre place.',
+    },
+    niceWin: {
+      title: 'Belle victoire !',
+      body: 'Votre dernier match vous a rapporté des points de saison. Voyez où vous en êtes.',
+    },
+    courtReminder: {
+      title: 'Rappel de court',
+      body: 'Une réservation se tient plus facilement avec un partenaire — invitez quelqu’un.',
+    },
+    newGear: {
+      title: 'Du nouveau matériel près de chez vous',
+      body: 'De nouvelles raquettes et chaussures viennent d’être mises en vente sur le marché.',
+    },
+    welcome: {
+      title: 'Bienvenue au club',
+      body: 'Réservez des courts, enregistrez vos matchs et grimpez au classement de la saison.',
     },
     matchRecorded: {
       title: 'Match ajouté à votre historique',
