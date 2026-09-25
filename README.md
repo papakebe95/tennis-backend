@@ -54,6 +54,29 @@ The API listens on `http://localhost:3000` by default (`PORT` in `.env`).
 | `JWT_REFRESH_SECRET`  | Server-side pepper mixed into refresh token hashes   |
 | `PORT`                | HTTP port (default `3000`)                           |
 
+## Languages (i18n)
+
+The API answers in English (`en`, the default) or French (`fr`), chosen per
+request with a `lang` header (`lang: fr`; `fr-FR` also works). Anything
+unsupported or missing falls back to English, and every response carries
+`Content-Language`.
+
+- **Errors and validation messages** are translated in the response `message`;
+  the response shape is unchanged.
+- **Notifications** are stored as a key plus facts (`messageKey`, `params`) and
+  worded when read, so they follow the reader's current language. Rows without
+  a key keep their stored English text.
+- **Database content** (country/city names, product category labels, club and
+  tournament descriptions, story titles/slides) keeps its English text in the
+  plain columns and holds other languages in a `translations` JSON column:
+  `{ "fr": { "label": "Raquettes" } }`. A missing translation falls back to
+  the English column, field by field. Club `amenities` stay unchanged for
+  matching; `amenityLabels` carries the display text.
+
+To add a message, put the key in `src/i18n/locales/en.ts` and `fr.ts` (the
+build fails if they differ) and use `t('errors.…')`. To add a language, add
+it to `SUPPORTED_LANGS` and create its locale file.
+
 ## Implemented endpoints
 
 Everything below is fully implemented (controller + service + Prisma

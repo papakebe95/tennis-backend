@@ -1,29 +1,38 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { amenityLabel, t } from '../i18n/i18n.js';
+import { localize } from '../i18n/localize.js';
 
 const citySelect = {
   id: true,
   name: true,
-  country: { select: { code: true, name: true } },
+  translations: true,
+  country: { select: { code: true, name: true, translations: true } },
 } as const;
 
 interface CityWithCountry {
   id: string;
   name: string;
-  country: { code: string; name: string };
+  translations: unknown;
+  country: { code: string; name: string; translations: unknown };
 }
 
 // The API keeps sending `city` and `country` as plain names (what the app
 // reads), now derived from the City -> Country rows, plus their ids/code.
-function withLocation<T extends { city: CityWithCountry }>({
-  city,
-  ...club
-}: T) {
+function withLocation<
+  T extends {
+    city: CityWithCountry;
+    amenities: string[];
+    translations?: unknown;
+  },
+>({ city, ...club }: T) {
   return {
-    ...club,
+    ...localize(club),
+    // `amenities` stay the stable names the app matches on; these are for display.
+    amenityLabels: club.amenities.map(amenityLabel),
     cityId: city.id,
-    city: city.name,
-    country: city.country.name,
+    city: localize(city).name,
+    country: localize(city.country).name,
     countryCode: city.country.code,
   };
 }
@@ -46,6 +55,7 @@ export class ClubsService {
         latitude: true,
         longitude: true,
         amenities: true,
+        translations: true,
         _count: { select: { courts: true } },
       },
     });
@@ -76,7 +86,7 @@ export class ClubsService {
     });
 
     if (!club) {
-      throw new NotFoundException('Club not found');
+      throw new NotFoundException(t('errors.clubs.notFound'));
     }
 
     // `cityId` (the club's own column) is replaced by the one from `city`.

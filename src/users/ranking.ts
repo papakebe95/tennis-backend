@@ -1,4 +1,5 @@
 import { PlayerSide, RecordedMatchType } from '@prisma/client';
+import { t } from '../i18n/i18n.js';
 
 // ---------------------------------------------------------------------------
 // Season ranking rules. Pure functions so the rules are easy to test and to
@@ -44,9 +45,11 @@ export function tierFor(points: number) {
   const next = TIERS[index + 1] ?? null;
   return {
     key: current.key,
-    name: current.name,
+    name: t(`tiers.${current.key}`),
     min: current.min,
-    next: next ? { key: next.key, name: next.name, min: next.min } : null,
+    next: next
+      ? { key: next.key, name: t(`tiers.${next.key}`), min: next.min }
+      : null,
     // 0..1 through the current tier; 1 at the top tier.
     progress: next
       ? (points - current.min) / (next.min - current.min)

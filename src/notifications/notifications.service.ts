@@ -1,11 +1,21 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
+import { currentLang, t } from '../i18n/i18n.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  renderNotification,
+  type NotificationKey,
+  type NotificationParams,
+} from './notification-messages.js';
 
 export interface NotifyInput {
   type: NotificationType;
+  /** Default-language text: the fallback when `key` can't be rendered. */
   title: string;
   body: string;
+  /** With `params`, lets the text be re-worded in the reader's language. */
+  key?: NotificationKey;
+  params?: NotificationParams;
   /** In-app path opened when the notification is tapped ("/club/bookings"). */
   route?: string;
 }
@@ -29,6 +39,8 @@ export class NotificationsService {
           type: input.type,
           title: input.title,
           body: input.body,
+          messageKey: input.key,
+          params: input.params,
           data: input.route ? { route: input.route } : undefined,
         },
       });
@@ -50,6 +62,8 @@ export class NotificationsService {
           type: true,
           title: true,
           body: true,
+          messageKey: true,
+          params: true,
           data: true,
           read: true,
           createdAt: true,
@@ -57,7 +71,24 @@ export class NotificationsService {
       }),
       this.unreadCount(userId),
     ]);
-    return { unreadCount, items };
+    const lang = currentLang();
+    return {
+      unreadCount,
+      // Reworded in the caller's language; rows without a key (older ones)
+      // keep the text they were stored with.
+      items: items.map(({ messageKey, params, ...item }) =>
+        messageKey
+          ? {
+              ...item,
+              ...renderNotification(
+                messageKey as NotificationKey,
+                (params ?? {}) as NotificationParams,
+                lang,
+              ),
+            }
+          : item,
+      ),
+    };
   }
 
   async unreadCount(userId: string) {
@@ -70,7 +101,8 @@ export class NotificationsService {
       where: { id, userId },
       data: { read: true },
     });
-    if (count === 0) throw new NotFoundException('Notification not found');
+    if (count === 0)
+      throw new NotFoundException(t('errors.notifications.notFound'));
     return { unreadCount: await this.unreadCount(userId) };
   }
 

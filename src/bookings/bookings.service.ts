@@ -12,6 +12,7 @@ import {
 } from '../notifications/notification-messages.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { CreateBookingDto } from './dto/create-booking.dto.js';
+import { t } from '../i18n/i18n.js';
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
   BookingStatus.PENDING,
@@ -34,17 +35,17 @@ export class BookingsService {
     const endTime = new Date(dto.endTime);
 
     if (endTime <= startTime) {
-      throw new BadRequestException('endTime must be after startTime');
+      throw new BadRequestException(t('errors.bookings.endBeforeStart'));
     }
     if (startTime <= new Date()) {
-      throw new BadRequestException('startTime must be in the future');
+      throw new BadRequestException(t('errors.bookings.startInPast'));
     }
 
     const court = await this.prisma.court.findUnique({
       where: { id: dto.courtId },
     });
     if (!court) {
-      throw new NotFoundException('Court not found');
+      throw new NotFoundException(t('errors.courts.notFound'));
     }
 
     const overlapping = await this.prisma.booking.findFirst({
@@ -56,9 +57,7 @@ export class BookingsService {
       },
     });
     if (overlapping) {
-      throw new ConflictException(
-        'This court is already booked for the requested time range',
-      );
+      throw new ConflictException(t('errors.bookings.slotTaken'));
     }
 
     const booking = await this.prisma.booking.create({
@@ -100,13 +99,11 @@ export class BookingsService {
     });
 
     if (!booking || booking.userId !== userId) {
-      throw new NotFoundException('Booking not found');
+      throw new NotFoundException(t('errors.bookings.notFound'));
     }
 
     if (booking.startTime <= new Date()) {
-      throw new ConflictException(
-        'Cannot cancel a booking that has already started or passed',
-      );
+      throw new ConflictException(t('errors.bookings.cannotCancel'));
     }
 
     const cancelled = await this.prisma.booking.update({

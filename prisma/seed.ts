@@ -21,10 +21,20 @@ import {
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcrypt';
+import {
+  CLUB_TRANSLATIONS,
+  COMPETITION_TRANSLATIONS,
+  COUNTRY_TRANSLATIONS,
+  PRODUCT_CATEGORY_TRANSLATIONS,
+  STORY_TRANSLATIONS,
+} from './seed-translations.js';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
+
+// Wraps French text as a row's `translations` value (undefined leaves it unset).
+const fr = (text?: object) => (text ? { fr: text } : undefined);
 
 // ISO 3166-1 alpha-2 codes for the countries the seed data mentions.
 const COUNTRY_CODES: Record<string, string> = { Senegal: 'SN' };
@@ -39,8 +49,8 @@ async function cityIdFor(cityName: string, countryName: string) {
   }
   const country = await prisma.country.upsert({
     where: { code },
-    update: { name: countryName },
-    create: { code, name: countryName },
+    update: { name: countryName, translations: fr(COUNTRY_TRANSLATIONS[countryName]) },
+    create: { code, name: countryName, translations: fr(COUNTRY_TRANSLATIONS[countryName]) },
   });
   const city = await prisma.city.upsert({
     where: { countryId_name: { countryId: country.id, name: cityName } },
@@ -79,10 +89,11 @@ async function seedProductCategories() {
   const ids = {} as Record<ProductCategoryCode, string>;
   for (const [index, category] of PRODUCT_CATEGORY_SEEDS.entries()) {
     const { code, label, icon } = category;
+    const translations = fr(PRODUCT_CATEGORY_TRANSLATIONS[code]);
     const row = await prisma.productCategory.upsert({
       where: { code },
-      update: { label, icon, sortOrder: index + 1 },
-      create: { code, label, icon, sortOrder: index + 1 },
+      update: { label, icon, sortOrder: index + 1, translations },
+      create: { code, label, icon, sortOrder: index + 1, translations },
     });
     ids[code] = row.id;
   }
@@ -404,6 +415,7 @@ async function main() {
     const clubData = {
       ...rest,
       cityId,
+      translations: fr(CLUB_TRANSLATIONS[rest.name]),
       bannerUrl: bannerUrl(slug),
       photos: photoUrls(slug, photoCount),
     };
@@ -1222,6 +1234,7 @@ async function seedHome() {
       name: seed.name,
       category: seed.category,
       description: seed.description,
+      translations: fr(COMPETITION_TRANSLATIONS[seed.key]),
       surface: seed.surface,
       format: seed.format,
       status: seed.status,
@@ -1337,6 +1350,7 @@ async function seedHome() {
         coverUrl: storyUrl(story.coverPhoto),
         publishedAt,
         expiresAt: new Date(Date.now() + 2 * DAY_MS),
+        translations: fr(STORY_TRANSLATIONS[story.title]),
         slides: story.slides.map(({ photo, ...slide }) => ({
           ...slide,
           imageUrl: storyUrl(photo),

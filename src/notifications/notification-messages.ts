@@ -1,20 +1,94 @@
 import { NotificationType } from '@prisma/client';
+import {
+  DEFAULT_LANG,
+  INTL_LOCALES,
+  t,
+  type Lang,
+  type MessageKey,
+} from '../i18n/i18n.js';
 import type { NotifyInput } from './notifications.service.js';
+
+export type NotificationKey =
+  | 'bookingConfirmed'
+  | 'bookingCancelled'
+  | 'purchaseRequestReceived'
+  | 'purchaseRequestAccepted'
+  | 'purchaseRequestDeclined'
+  | 'tournamentRegistered'
+  | 'matchRecorded';
+
+/** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
+export type NotificationParams = Record<string, string | number | null>;
 
 // Club hours are treated as UTC everywhere (see CourtsService), so slot times
 // are spoken in UTC too, or "18:00" would mean different things in the app and
 // in its notifications.
-const slotFormat = new Intl.DateTimeFormat('en-GB', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-  timeZone: 'UTC',
-});
+const slotFormats = new Map<Lang, Intl.DateTimeFormat>();
+const slot = (start: Date, lang: Lang) => {
+  let format = slotFormats.get(lang);
+  if (!format) {
+    format = new Intl.DateTimeFormat(INTL_LOCALES[lang], {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'UTC',
+    });
+    slotFormats.set(lang, format);
+  }
+  return format.format(start);
+};
 
-const slot = (start: Date) => slotFormat.format(start);
+/**
+ * Words a notification in `lang` from its stored key and facts. Notifications
+ * are rendered when they are read, so they follow the reader's language rather
+ * than the language of whoever triggered them.
+ */
+export function renderNotification(
+  key: NotificationKey,
+  params: NotificationParams,
+  lang: Lang,
+): { title: string; body: string } {
+  const text: Record<string, string | number | null> = { ...params };
+  if (typeof params.start === 'string') {
+    text.slot = slot(new Date(params.start), lang);
+  }
+  if (key === 'matchRecorded') {
+    const outcome = t(
+      `notifications.matchRecorded.${
+        params.result === 'WIN'
+          ? 'win'
+          : params.result === 'LOSS'
+            ? 'loss'
+            : 'unfinished'
+      }`,
+      undefined,
+      lang,
+    );
+    text.outcome = params.score ? `${outcome} ${params.score}` : outcome;
+  }
+  return {
+    title: t(`notifications.${key}.title` as MessageKey, text, lang),
+    body: t(`notifications.${key}.body` as MessageKey, text, lang),
+  };
+}
+
+// `title`/`body` are also stored, in the default language, as the fallback for
+// clients or rows that don't know about `key`.
+const build = (
+  type: NotificationType,
+  key: NotificationKey,
+  params: NotificationParams,
+  route: string,
+): NotifyInput => ({
+  type,
+  key,
+  params,
+  route,
+  ...renderNotification(key, params, DEFAULT_LANG),
+});
 
 interface BookingFacts {
   courtName: string;
@@ -22,53 +96,62 @@ interface BookingFacts {
   start: Date;
 }
 
-export const bookingConfirmed = (b: BookingFacts): NotifyInput => ({
-  type: NotificationType.BOOKING,
-  title: 'Court booked',
-  body: `${b.courtName} at ${b.clubName} · ${slot(b.start)}`,
-  route: '/club/bookings',
+const bookingParams = (b: BookingFacts): NotificationParams => ({
+  courtName: b.courtName,
+  clubName: b.clubName,
+  start: b.start.toISOString(),
 });
 
-export const bookingCancelled = (b: BookingFacts): NotifyInput => ({
-  type: NotificationType.BOOKING,
-  title: 'Booking cancelled',
-  body: `${b.courtName} at ${b.clubName} · ${slot(b.start)} is free again.`,
-  route: '/club/bookings',
-});
+export const bookingConfirmed = (b: BookingFacts): NotifyInput =>
+  build(
+    NotificationType.BOOKING,
+    'bookingConfirmed',
+    bookingParams(b),
+    '/club/bookings',
+  );
+
+export const bookingCancelled = (b: BookingFacts): NotifyInput =>
+  build(
+    NotificationType.BOOKING,
+    'bookingCancelled',
+    bookingParams(b),
+    '/club/bookings',
+  );
 
 export const purchaseRequestReceived = (
   productId: string,
   productTitle: string,
   buyerName: string,
-): NotifyInput => ({
-  type: NotificationType.MARKETPLACE,
-  title: 'New purchase request',
-  body: `${buyerName} wants your ${productTitle}.`,
-  route: `/marketplace/product/${productId}`,
-});
+): NotifyInput =>
+  build(
+    NotificationType.MARKETPLACE,
+    'purchaseRequestReceived',
+    { productTitle, buyerName },
+    `/marketplace/product/${productId}`,
+  );
 
 export const purchaseRequestAnswered = (
   productId: string,
   productTitle: string,
   accepted: boolean,
-): NotifyInput => ({
-  type: NotificationType.MARKETPLACE,
-  title: accepted ? 'Request accepted' : 'Request declined',
-  body: accepted
-    ? `The seller accepted your request for ${productTitle}. Their contact is now visible.`
-    : `Your request for ${productTitle} wasn't accepted.`,
-  route: `/marketplace/product/${productId}`,
-});
+): NotifyInput =>
+  build(
+    NotificationType.MARKETPLACE,
+    accepted ? 'purchaseRequestAccepted' : 'purchaseRequestDeclined',
+    { productTitle },
+    `/marketplace/product/${productId}`,
+  );
 
 export const tournamentRegistered = (
   competitionId: string,
   name: string,
-): NotifyInput => ({
-  type: NotificationType.TOURNAMENT,
-  title: "You're in!",
-  body: `Your registration for ${name} is confirmed.`,
-  route: `/tournaments/${competitionId}`,
-});
+): NotifyInput =>
+  build(
+    NotificationType.TOURNAMENT,
+    'tournamentRegistered',
+    { name },
+    `/tournaments/${competitionId}`,
+  );
 
 interface SetLine {
   me: number;
@@ -93,14 +176,10 @@ export const matchRecorded = (
   recorderName: string,
   result: 'WIN' | 'LOSS' | null,
   sets: SetLine[],
-): NotifyInput => {
-  const outcome =
-    result === 'WIN' ? 'You won' : result === 'LOSS' ? 'You lost' : 'Unfinished';
-  const score = scoreLine(sets);
-  return {
-    type: NotificationType.MATCH,
-    title: 'Match added to your history',
-    body: `${recorderName} recorded a match with you. ${outcome}${score ? ` ${score}` : ''}.`,
-    route: `/play/match/${matchId}`,
-  };
-};
+): NotifyInput =>
+  build(
+    NotificationType.MATCH,
+    'matchRecorded',
+    { recorderName, result, score: scoreLine(sets) },
+    `/play/match/${matchId}`,
+  );

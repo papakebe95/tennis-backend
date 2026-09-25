@@ -22,6 +22,7 @@ import {
   sellerContactFor,
   withCategoryCode,
 } from './marketplace.shared.js';
+import { t } from '../i18n/i18n.js';
 
 const ownerRequestSelect = {
   id: true,
@@ -68,15 +69,13 @@ export class PurchaseRequestsService {
       select: { id: true, sellerId: true, status: true, title: true },
     });
     if (!product || product.status === ProductStatus.REMOVED) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException(t('errors.products.notFound'));
     }
     if (product.sellerId === userId) {
-      throw new ForbiddenException(
-        'You cannot send a purchase request for your own product',
-      );
+      throw new ForbiddenException(t('errors.purchaseRequests.ownProduct'));
     }
     if (product.status !== ProductStatus.AVAILABLE) {
-      throw new ConflictException('This item is no longer available');
+      throw new ConflictException(t('errors.purchaseRequests.unavailable'));
     }
 
     const existing = await this.prisma.purchaseRequest.findFirst({
@@ -90,9 +89,7 @@ export class PurchaseRequestsService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException(
-        'You already have an active purchase request for this item',
-      );
+      throw new ConflictException(t('errors.purchaseRequests.alreadyActive'));
     }
 
     const created = await this.prisma.purchaseRequest.create({
@@ -125,10 +122,10 @@ export class PurchaseRequestsService {
       select: { sellerId: true, status: true },
     });
     if (!product || product.status === ProductStatus.REMOVED) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException(t('errors.products.notFound'));
     }
     if (product.sellerId !== userId) {
-      throw new ForbiddenException('You do not own this product');
+      throw new ForbiddenException(t('errors.products.notOwner'));
     }
 
     const requests = await this.prisma.purchaseRequest.findMany({
@@ -155,15 +152,13 @@ export class PurchaseRequestsService {
       },
     });
     if (!request) {
-      throw new NotFoundException('Purchase request not found');
+      throw new NotFoundException(t('errors.purchaseRequests.notFound'));
     }
     if (request.product.sellerId !== userId) {
-      throw new ForbiddenException(
-        'Only the seller can respond to this purchase request',
-      );
+      throw new ForbiddenException(t('errors.purchaseRequests.onlySeller'));
     }
     if (request.status !== PurchaseRequestStatus.PENDING) {
-      throw new ConflictException('This purchase request is no longer pending');
+      throw new ConflictException(t('errors.purchaseRequests.notPending'));
     }
 
     if (dto.status === PurchaseRequestStatus.DECLINED) {
@@ -172,9 +167,7 @@ export class PurchaseRequestsService {
         data: { status: PurchaseRequestStatus.DECLINED },
       });
       if (declined.count === 0) {
-        throw new ConflictException(
-          'This purchase request is no longer pending',
-        );
+        throw new ConflictException(t('errors.purchaseRequests.notPending'));
       }
       await this.notifications.notify(
         request.buyerId,
@@ -193,7 +186,7 @@ export class PurchaseRequestsService {
         data: { status: ProductStatus.RESERVED },
       });
       if (reserved.count === 0) {
-        throw new ConflictException('This item is no longer available');
+        throw new ConflictException(t('errors.purchaseRequests.unavailable'));
       }
 
       const accepted = await tx.purchaseRequest.updateMany({
@@ -201,9 +194,7 @@ export class PurchaseRequestsService {
         data: { status: PurchaseRequestStatus.ACCEPTED },
       });
       if (accepted.count === 0) {
-        throw new ConflictException(
-          'This purchase request is no longer pending',
-        );
+        throw new ConflictException(t('errors.purchaseRequests.notPending'));
       }
 
       const othersWhere = {
@@ -243,13 +234,13 @@ export class PurchaseRequestsService {
       select: { id: true, buyerId: true, status: true },
     });
     if (!request) {
-      throw new NotFoundException('Purchase request not found');
+      throw new NotFoundException(t('errors.purchaseRequests.notFound'));
     }
     if (request.buyerId !== userId) {
-      throw new ForbiddenException('This is not your purchase request');
+      throw new ForbiddenException(t('errors.purchaseRequests.notYours'));
     }
     if (request.status !== PurchaseRequestStatus.PENDING) {
-      throw new ConflictException('Only pending requests can be cancelled');
+      throw new ConflictException(t('errors.purchaseRequests.onlyPendingCancel'));
     }
 
     const cancelled = await this.prisma.purchaseRequest.updateMany({
@@ -257,7 +248,7 @@ export class PurchaseRequestsService {
       data: { status: PurchaseRequestStatus.CANCELLED },
     });
     if (cancelled.count === 0) {
-      throw new ConflictException('Only pending requests can be cancelled');
+      throw new ConflictException(t('errors.purchaseRequests.onlyPendingCancel'));
     }
     return { id: requestId, status: PurchaseRequestStatus.CANCELLED };
   }

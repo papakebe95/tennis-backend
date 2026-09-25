@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizePhone } from '../common/utils/phone.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { t } from '../i18n/i18n.js';
 
 const ACCESS_TOKEN_TTL = '15m';
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -34,9 +35,7 @@ export class AuthService {
   async register(dto: RegisterDto): Promise<TokenPair> {
     const msisdn = normalizePhone(dto.msisdn);
     if (!msisdn) {
-      throw new BadRequestException(
-        'Enter a valid phone number with its country code, e.g. +221 77 123 45 67',
-      );
+      throw new BadRequestException(t('errors.phone.invalid'));
     }
 
     const [existingEmail, existingMsisdn, existingExtraPhone] =
@@ -46,12 +45,12 @@ export class AuthService {
         this.prisma.userPhone.findUnique({ where: { number: msisdn } }),
       ]);
     if (existingEmail) {
-      throw new ConflictException('Email is already registered');
+      throw new ConflictException(t('errors.auth.emailTaken'));
     }
     // Also checked against UserPhone: a number already saved as someone
     // else's secondary number can't become a new account's primary one.
     if (existingMsisdn || existingExtraPhone) {
-      throw new ConflictException('This phone number is already registered');
+      throw new ConflictException(t('errors.auth.phoneTaken'));
     }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
@@ -76,9 +75,7 @@ export class AuthService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException(
-          'This email or phone number is already registered',
-        );
+        throw new ConflictException(t('errors.auth.emailOrPhoneTaken'));
       }
       throw error;
     }
@@ -91,7 +88,7 @@ export class AuthService {
       where: { email: dto.email },
     });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(t('errors.auth.invalidCredentials'));
     }
 
     const passwordMatches = await bcrypt.compare(
@@ -99,7 +96,7 @@ export class AuthService {
       user.passwordHash,
     );
     if (!passwordMatches) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException(t('errors.auth.invalidCredentials'));
     }
 
     return this.issueTokenPair(user.id, user.email);
@@ -116,7 +113,7 @@ export class AuthService {
       where: { id: record.userId },
     });
     if (!user) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(t('errors.auth.invalidRefreshToken'));
     }
 
     await this.prisma.refreshToken.update({
@@ -179,7 +176,7 @@ export class AuthService {
   private async validateRawRefreshToken(rawToken: string) {
     const separatorIndex = rawToken.indexOf('.');
     if (separatorIndex === -1) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(t('errors.auth.invalidRefreshToken'));
     }
 
     const recordId = rawToken.slice(0, separatorIndex);
@@ -190,7 +187,7 @@ export class AuthService {
     });
 
     if (!record || record.revoked || record.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(t('errors.auth.invalidRefreshToken'));
     }
 
     const matches = await bcrypt.compare(
@@ -198,7 +195,7 @@ export class AuthService {
       record.tokenHash,
     );
     if (!matches) {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException(t('errors.auth.invalidRefreshToken'));
     }
 
     return { record };

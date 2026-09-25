@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { tournamentRegistered } from '../notifications/notification-messages.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import type { ListCompetitionsQueryDto } from './dto/list-competitions-query.dto.js';
+import { t } from '../i18n/i18n.js';
+import { localize } from '../i18n/localize.js';
 
 const competitionSelect = (userId: string) =>
   ({
@@ -22,11 +24,16 @@ const competitionSelect = (userId: string) =>
     format: true,
     status: true,
     description: true,
+    translations: true,
     featured: true,
     maxParticipants: true,
     entryFee: true,
     club: {
-      select: { id: true, name: true, city: { select: { name: true } } },
+      select: {
+        id: true,
+        name: true,
+        city: { select: { name: true, translations: true } },
+      },
     },
     _count: { select: { participants: true } },
     // At most one row: this player's own registration.
@@ -112,7 +119,7 @@ export class CompetitionsService {
         },
       },
     });
-    if (!row) throw new NotFoundException('Tournament not found');
+    if (!row) throw new NotFoundException(t('errors.competitions.notFound'));
 
     const { participants, ...rest } = row;
     const view = this.toView(
@@ -148,19 +155,19 @@ export class CompetitionsService {
         participants: { where: { userId }, select: { id: true }, take: 1 },
       },
     });
-    if (!competition) throw new NotFoundException('Tournament not found');
+    if (!competition) throw new NotFoundException(t('errors.competitions.notFound'));
 
     // Registering twice is a no-op, not an error: retries stay safe.
     if (competition.participants.length === 0) {
       if (effectiveStatus(competition) !== CompetitionStatus.UPCOMING) {
-        throw new ConflictException('Registration for this tournament is closed');
+        throw new ConflictException(t('errors.competitions.closed'));
       }
       const { maxParticipants } = competition;
       if (
         maxParticipants != null &&
         competition._count.participants >= maxParticipants
       ) {
-        throw new ConflictException('This tournament is full');
+        throw new ConflictException(t('errors.competitions.full'));
       }
       await this.prisma.competitionParticipant.create({
         data: { competitionId: id, userId },
@@ -178,9 +185,9 @@ export class CompetitionsService {
       where: { id },
       select: { id: true, status: true, startDate: true, endDate: true },
     });
-    if (!competition) throw new NotFoundException('Tournament not found');
+    if (!competition) throw new NotFoundException(t('errors.competitions.notFound'));
     if (effectiveStatus(competition) !== CompetitionStatus.UPCOMING) {
-      throw new ConflictException('This tournament has already started');
+      throw new ConflictException(t('errors.competitions.started'));
     }
     await this.prisma.competitionParticipant.deleteMany({
       where: { competitionId: id, userId },
@@ -197,10 +204,10 @@ export class CompetitionsService {
         ? null
         : Math.max(0, maxParticipants - _count.participants);
     return {
-      ...rest,
+      ...localize(rest),
       status,
       // The app reads the club's city as a plain name.
-      club: club && { id: club.id, name: club.name, city: club.city.name },
+      club: club && { id: club.id, name: club.name, city: localize(club.city).name },
       entryFee,
       maxParticipants,
       participantsCount: _count.participants,

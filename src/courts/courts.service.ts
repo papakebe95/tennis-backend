@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { BookingStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { t } from '../i18n/i18n.js';
 
 // Business hours are fixed for now (no per-club overrides yet): 08:00-22:00
 // in 1-hour slots, treated as UTC. This is a known simplification - a real
@@ -45,7 +46,7 @@ export class CourtsService {
       where: { id: courtId },
     });
     if (!court) {
-      throw new NotFoundException('Court not found');
+      throw new NotFoundException(t('errors.courts.notFound'));
     }
 
     // `date` has already passed @IsDateString() validation; take just the

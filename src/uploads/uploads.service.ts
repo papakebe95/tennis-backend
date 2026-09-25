@@ -8,6 +8,7 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 // tsconfig `types` array is an explicit allowlist (only vitest/globals +
 // node), so this ambient type wouldn't otherwise be picked up automatically.
 import type {} from 'multer';
+import { t } from '../i18n/i18n.js';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 
@@ -50,19 +51,22 @@ export class UploadsService {
 
   async save(file: Express.Multer.File, folder: string): Promise<SavedUpload> {
     if (!file) {
-      throw new BadRequestException('No file provided');
+      throw new BadRequestException(t('errors.uploads.noFile'));
     }
 
     const extension = ALLOWED_MIME_EXTENSIONS[file.mimetype];
     if (!extension) {
       throw new BadRequestException(
-        `Unsupported file type "${file.mimetype}". Allowed types: ${Object.keys(ALLOWED_MIME_EXTENSIONS).join(', ')}`,
+        t('errors.uploads.unsupportedType', {
+          type: file.mimetype,
+          allowed: Object.keys(ALLOWED_MIME_EXTENSIONS).join(', '),
+        }),
       );
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
       throw new BadRequestException(
-        `File too large: max size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB`,
+        t('errors.uploads.tooLarge', { max: MAX_FILE_SIZE_BYTES / (1024 * 1024) }),
       );
     }
 

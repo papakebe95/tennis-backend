@@ -11,6 +11,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { CreateMatchDto } from './dto/create-match.dto.js';
 import { ListMatchesQueryDto } from './dto/list-matches-query.dto.js';
 import { matchInclude, toMatchView } from './matches.view.js';
+import { t } from '../i18n/i18n.js';
 
 // Matches where the user is either the recorder or the registered opponent.
 const involving = (userId: string): Prisma.MatchWhereInput => ({
@@ -109,42 +110,40 @@ export class MatchesService {
       where: { id, ...involving(userId) },
       include: matchInclude,
     });
-    if (!match) throw new NotFoundException('Match not found');
+    if (!match) throw new NotFoundException(t('errors.matches.notFound'));
     return toMatchView(match, userId);
   }
 
   async create(userId: string, dto: CreateMatchDto) {
     const opponentName = dto.opponentName?.trim();
     if (!dto.opponentUserId && !opponentName) {
-      throw new BadRequestException('Pick an opponent or type a name');
+      throw new BadRequestException(t('errors.matches.pickOpponent'));
     }
     if (dto.opponentUserId === userId) {
-      throw new BadRequestException("You can't play against yourself");
+      throw new BadRequestException(t('errors.matches.selfPlay'));
     }
     if (dto.opponentUserId) {
       const exists = await this.prisma.user.findUnique({
         where: { id: dto.opponentUserId },
         select: { id: true },
       });
-      if (!exists) throw new BadRequestException('Opponent not found');
+      if (!exists) throw new BadRequestException(t('errors.matches.opponentNotFound'));
     }
 
     const startedAt = new Date(dto.startedAt);
     const endedAt = new Date(dto.endedAt);
     if (endedAt < startedAt) {
-      throw new BadRequestException('The match cannot end before it starts');
+      throw new BadRequestException(t('errors.matches.endBeforeStart'));
     }
     // 2s of slack: the two clocks are read a moment apart on the client.
     if (dto.playSeconds > dto.totalSeconds + 2) {
-      throw new BadRequestException(
-        'Play time cannot be longer than the total duration',
-      );
+      throw new BadRequestException(t('errors.matches.playTimeTooLong'));
     }
     if (dto.status === 'COMPLETED' && !dto.winner) {
-      throw new BadRequestException('A completed match needs a winner');
+      throw new BadRequestException(t('errors.matches.needsWinner'));
     }
     if (dto.status === 'COMPLETED' && dto.sets.length === 0) {
-      throw new BadRequestException('A completed match needs a score');
+      throw new BadRequestException(t('errors.matches.needsScore'));
     }
 
     // The client retries a failed save; the recording user can't have two
@@ -223,9 +222,9 @@ export class MatchesService {
       where: { id, ...involving(userId) },
       select: { player1Id: true },
     });
-    if (!match) throw new NotFoundException('Match not found');
+    if (!match) throw new NotFoundException(t('errors.matches.notFound'));
     if (match.player1Id !== userId) {
-      throw new ForbiddenException('Only the player who recorded it can delete a match');
+      throw new ForbiddenException(t('errors.matches.onlyRecorderDeletes'));
     }
     await this.prisma.match.delete({ where: { id } });
   }

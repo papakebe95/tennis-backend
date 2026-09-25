@@ -24,6 +24,7 @@ import {
   TIERS,
   tierFor,
 } from './ranking.js';
+import { t } from '../i18n/i18n.js';
 
 const MAX_EXTRA_PHONES = 5;
 
@@ -49,7 +50,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(t('errors.users.notFound'));
     }
 
     const { passwordHash: _passwordHash, playerProfile, ...safeUser } = user;
@@ -86,7 +87,7 @@ export class UsersService {
       availabilityNote: profile.availabilityNote,
     };
     if (profile.ntrpRating != null && (profile.ntrpRating * 2) % 1 !== 0) {
-      throw new BadRequestException('ntrpRating must be a multiple of 0.5');
+      throw new BadRequestException(t('errors.users.ntrpStep'));
     }
 
     await this.prisma.$transaction([
@@ -114,7 +115,7 @@ export class UsersService {
     const count = await this.prisma.userPhone.count({ where: { userId } });
     if (count >= MAX_EXTRA_PHONES) {
       throw new BadRequestException(
-        `You can add up to ${MAX_EXTRA_PHONES} extra numbers`,
+        t('errors.phone.max', { max: MAX_EXTRA_PHONES }),
       );
     }
     await this.assertNumberFree(number);
@@ -129,7 +130,7 @@ export class UsersService {
       where: { id: phoneId, userId },
       data: { label },
     });
-    if (count === 0) throw new NotFoundException('Phone number not found');
+    if (count === 0) throw new NotFoundException(t('errors.phone.notFound'));
     return this.getMeWithProfile(userId);
   }
 
@@ -137,7 +138,7 @@ export class UsersService {
     const { count } = await this.prisma.userPhone.deleteMany({
       where: { id: phoneId, userId },
     });
-    if (count === 0) throw new NotFoundException('Phone number not found');
+    if (count === 0) throw new NotFoundException(t('errors.phone.notFound'));
     return this.getMeWithProfile(userId);
   }
 
@@ -147,7 +148,7 @@ export class UsersService {
       const phone = await tx.userPhone.findFirst({
         where: { id: phoneId, userId },
       });
-      if (!phone) throw new NotFoundException('Phone number not found');
+      if (!phone) throw new NotFoundException(t('errors.phone.notFound'));
       const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
       await tx.userPhone.update({
         where: { id: phone.id },
@@ -168,9 +169,7 @@ export class UsersService {
   private requirePhone(raw: string): string {
     const number = normalizePhone(raw);
     if (!number) {
-      throw new BadRequestException(
-        'Enter a valid phone number with its country code, e.g. +221 77 123 45 67',
-      );
+      throw new BadRequestException(t('errors.phone.invalid'));
     }
     return number;
   }
@@ -181,7 +180,7 @@ export class UsersService {
       this.prisma.userPhone.findUnique({ where: { number } }),
     ]);
     if (asPrimary || asExtra) {
-      throw new ConflictException('This number is already in use');
+      throw new ConflictException(t('errors.phone.inUse'));
     }
   }
 

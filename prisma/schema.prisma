@@ -271,6 +271,10 @@ model Country {
   // ISO 3166-1 alpha-2, upper case ("SN").
   code      String   @unique
   name      String   @unique
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -281,6 +285,10 @@ model City {
   id        String   @id @default(cuid())
   name      String
   countryId String
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -307,6 +315,10 @@ model Club {
   email         String?
   openingHours  Json?
   amenities     String[] @default([])
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -496,6 +508,10 @@ model Competition {
   format    CompetitionFormat
   status    CompetitionStatus @default(UPCOMING)
   description String?
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   // Highlighted first on the Home tab.
   featured  Boolean           @default(false)
   maxParticipants Int?
@@ -583,6 +599,11 @@ model Story {
   kind        StoryKind
   coverUrl    String
   slides      Json
+  // `slides` translate per index: { "fr": { "title": "...", "slides": [{ "headline": "..." }] } }
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   publishedAt DateTime  @default(now())
   expiresAt   DateTime
   createdAt   DateTime  @default(now())
@@ -614,8 +635,14 @@ model Notification {
   id        String           @id @default(cuid())
   userId    String
   type      NotificationType
+  // Default-language text, kept as the fallback; see messageKey.
   title     String
   body      String
+  // Translation key ("bookingConfirmed") and the facts to fill it with. When
+  // set, the API words the notification in the reader's language instead of
+  // returning title/body.
+  messageKey String?
+  params    Json?
   // `{ route?: string }` — the in-app path the notification opens.
   data      Json?
   read      Boolean  @default(false)
@@ -641,6 +668,10 @@ model ProductCategory {
   // Icon slug the app maps to a glyph ("racket").
   icon      String
   sortOrder Int      @default(0)
+  // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
+  // columns are the default language (English) and the fallback; see
+  // src/i18n/localize.ts.
+  translations Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

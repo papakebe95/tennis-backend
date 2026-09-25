@@ -18,6 +18,8 @@ import {
   sellerContactFor,
   withCategoryCode,
 } from './marketplace.shared.js';
+import { t } from '../i18n/i18n.js';
+import { localize } from '../i18n/localize.js';
 
 const PUBLIC_STATUSES: ProductStatus[] = [
   ProductStatus.AVAILABLE,
@@ -33,9 +35,9 @@ export class ProductsService {
   async categories() {
     const categories = await this.prisma.productCategory.findMany({
       orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-      select: { code: true, label: true, icon: true },
+      select: { code: true, label: true, icon: true, translations: true },
     });
-    return categories.map(({ code, label, icon }) => ({
+    return categories.map((category) => localize(category)).map(({ code, label, icon }) => ({
       value: code,
       label,
       icon,
@@ -117,7 +119,7 @@ export class ProductsService {
       },
     });
     if (!product || product.status === ProductStatus.REMOVED) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException(t('errors.products.notFound'));
     }
 
     const request = await this.prisma.purchaseRequest.findFirst({
@@ -216,7 +218,7 @@ export class ProductsService {
       select: { id: true },
     });
     if (!category) {
-      throw new BadRequestException(`Unknown product category "${code}"`);
+      throw new BadRequestException(t('errors.products.unknownCategory', { code }));
     }
     return category.id;
   }
@@ -228,10 +230,10 @@ export class ProductsService {
       select: { id: true, sellerId: true, status: true },
     });
     if (!product || product.status === ProductStatus.REMOVED) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException(t('errors.products.notFound'));
     }
     if (product.sellerId !== userId) {
-      throw new ForbiddenException('You do not own this product');
+      throw new ForbiddenException(t('errors.products.notOwner'));
     }
     return product;
   }
