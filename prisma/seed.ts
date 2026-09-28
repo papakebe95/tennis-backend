@@ -28,6 +28,7 @@ import {
   PRODUCT_CATEGORY_TRANSLATIONS,
   STORY_TRANSLATIONS,
 } from './seed-translations.js';
+import { CLUB_BANNERS } from './seed-banners.js';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -416,7 +417,7 @@ async function main() {
       ...rest,
       cityId,
       translations: fr(CLUB_TRANSLATIONS[rest.name]),
-      bannerUrl: bannerUrl(slug),
+      bannerUrl: CLUB_BANNERS[rest.name] ?? bannerUrl(slug),
       photos: photoUrls(slug, photoCount),
     };
 
