@@ -6,16 +6,18 @@ import {
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { UserStatus } from '@prisma/client';
-import { pendingAccount } from './account-status.js';
+import { passwordChangeRequired, pendingAccount } from './account-status.js';
 import type { AuthenticatedUser } from './jwt.strategy.js';
 
-const ALLOW_PENDING = 'auth:allowPending';
+const ALLOW_RESTRICTED = 'auth:allowRestricted';
 
 /**
- * Lets accounts still awaiting validation call this endpoint. Everything else
- * answers 403 ACCOUNT_PENDING to them.
+ * Lets restricted sessions call this endpoint: accounts still awaiting
+ * validation, and accounts that must change a password an administrator
+ * reset. Everything else answers 403 ACCOUNT_PENDING / PASSWORD_CHANGE_REQUIRED
+ * to them.
  */
-export const AllowPending = () => SetMetadata(ALLOW_PENDING, true);
+export const AllowRestricted = () => SetMetadata(ALLOW_RESTRICTED, true);
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -26,12 +28,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   override async canActivate(context: ExecutionContext): Promise<boolean> {
     await (super.canActivate(context) as Promise<boolean>);
     const user = context.switchToHttp().getRequest<{ user: AuthenticatedUser }>().user;
-    if (user.status === UserStatus.PENDING) {
-      const allowed = this.reflector.getAllAndOverride<boolean>(ALLOW_PENDING, [
+    const restricted = user.status === UserStatus.PENDING || user.mustChangePassword;
+    if (restricted) {
+      const allowed = this.reflector.getAllAndOverride<boolean>(ALLOW_RESTRICTED, [
         context.getHandler(),
         context.getClass(),
       ]);
-      if (!allowed) throw pendingAccount();
+      if (!allowed) {
+        throw user.mustChangePassword ? passwordChangeRequired() : pendingAccount();
+      }
     }
     return true;
   }

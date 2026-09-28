@@ -6,11 +6,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { normalizePhone } from '../common/utils/phone.js';
+import { toInternationalPhone } from '../common/utils/phone.js';
 import { AuditService } from '../audit/audit.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -36,8 +36,17 @@ export class AuthService {
     private readonly audit: AuditService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<TokenPair> {
-    const msisdn = normalizePhone(dto.msisdn);
+  /**
+   * Creates an account and signs it in. Players are ACTIVE at once. A
+   * back-office `applicant` starts PENDING, and its access request is written
+   * by `applicant.inTransaction` together with the account, so neither
+   * exists without the other.
+   */
+  async register(
+    dto: RegisterDto,
+    applicant?: { inTransaction: (tx: Prisma.TransactionClient, userId: string) => Promise<void> },
+  ): Promise<TokenPair> {
+    const msisdn = toInternationalPhone(dto.msisdn, this.callingCode());
     if (!msisdn) {
       throw new BadRequestException(t('errors.phone.invalid'));
     }
@@ -59,17 +68,27 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    let user;
-    try {
-      user = await this.prisma.user.create({
+    const create = (db: Pick<Prisma.TransactionClient, 'user'>) =>
+      db.user.create({
         data: {
           email: dto.email,
           passwordHash,
           firstname: dto.firstname,
           lastname: dto.lastname,
           msisdn,
+          ...(applicant ? { status: UserStatus.PENDING } : {}),
         },
       });
+
+    let user;
+    try {
+      user = applicant
+        ? await this.prisma.$transaction(async (tx) => {
+            const created = await create(tx);
+            await applicant.inTransaction(tx, created.id);
+            return created;
+          })
+        : await create(this.prisma);
     } catch (error) {
       // Safety net for a race: two requests can both pass the checks above
       // and then collide on the DB's unique constraint. Same message either
@@ -123,15 +142,14 @@ export class AuthService {
         where: { email: { equals: identifier, mode: 'insensitive' } },
       });
     }
-    const msisdn = normalizePhone(identifier);
-    if (!msisdn) return null;
     // Stored numbers are international ("+221…"); people often type the
     // local form ("77 000 00 01") or omit the "+".
-    const callingCode = this.configService.get<string>('DEFAULT_CALLING_CODE', '221');
-    const candidates = msisdn.startsWith('+')
-      ? [msisdn]
-      : [`+${callingCode}${msisdn}`, `+${msisdn}`];
-    return this.prisma.user.findFirst({ where: { msisdn: { in: candidates } } });
+    const msisdn = toInternationalPhone(identifier, this.callingCode());
+    return msisdn ? this.prisma.user.findUnique({ where: { msisdn } }) : null;
+  }
+
+  private callingCode(): string {
+    return this.configService.get<string>('DEFAULT_CALLING_CODE', '221');
   }
 
   /**
@@ -159,6 +177,7 @@ export class AuthService {
         data: {
           passwordHash,
           passwordChangedAt: new Date(),
+          mustChangePassword: false,
           tokenVersion: { increment: 1 },
         },
       });

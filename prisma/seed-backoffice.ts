@@ -99,7 +99,7 @@ export async function seedBackOffice(prisma: PrismaClient) {
   for (const { grants, status = UserStatus.ACTIVE, ...account } of ACCOUNTS) {
     const user = await prisma.user.upsert({
       where: { msisdn: account.msisdn },
-      update: { ...account, status, passwordHash, passwordChangedAt: null },
+      update: { ...account, status, passwordHash, passwordChangedAt: null, mustChangePassword: false },
       create: { ...account, status, passwordHash },
     });
     superAdminId ??= user.id;
@@ -139,6 +139,57 @@ export async function seedBackOffice(prisma: PrismaClient) {
         });
       }
     }
+  }
+
+  // Access requests, so the review screens have something to show. Rebuilt on
+  // every run for the seeded applicants.
+  const firstCity = await prisma.city.findFirst({ orderBy: { name: 'asc' } });
+  const pending = await prisma.user.findUniqueOrThrow({ where: { msisdn: '+221770000009' } });
+  const player = await prisma.user.findUnique({ where: { email: 'moussa.diallo@example.com' } });
+  const applicantIds = [pending.id, ...(player ? [player.id] : [])];
+  await prisma.accessRequest.deleteMany({ where: { userId: { in: applicantIds } } });
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  await prisma.accessRequest.create({
+    data: {
+      userId: pending.id,
+      roleId: roleIds.get('CLUB_ADMIN')!,
+      proposedOrganization: {
+        type: 'CLUB',
+        name: 'Tennis Club de Saly',
+        cityId: firstCity?.id,
+        countryId: firstCity?.countryId,
+        address: 'Route de Saly Portudal',
+        phone: '+221339570000',
+      },
+      message: 'Je gère le club de Saly (4 courts en terre battue) et souhaite y organiser les réservations et tournois.',
+      createdAt: new Date(Date.now() - 2 * DAY_MS),
+    },
+  });
+  if (player) {
+    await prisma.accessRequest.create({
+      data: {
+        userId: player.id,
+        roleId: roleIds.get('TOURNAMENT_ORGANIZER')!,
+        status: 'INFO_REQUESTED',
+        message: 'I run a monthly amateur tournament at Almadies with friends.',
+        infoRequest: 'How many players usually take part, and on which courts?',
+        reviewerId: superAdminId,
+        createdAt: new Date(Date.now() - 5 * DAY_MS),
+      },
+    });
+    await prisma.accessRequest.create({
+      data: {
+        userId: player.id,
+        roleId: roleIds.get('FEDERATION_ADMIN')!,
+        organizationId: federation.id,
+        status: 'REJECTED',
+        message: 'I would like to help the federation.',
+        decisionReason: 'Federation administrators are appointed by the federation board.',
+        reviewerId: superAdminId,
+        reviewedAt: new Date(Date.now() - 9 * DAY_MS),
+        createdAt: new Date(Date.now() - 10 * DAY_MS),
+      },
+    });
   }
 
   console.log(

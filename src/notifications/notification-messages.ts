@@ -20,7 +20,12 @@ export type NotificationKey =
   | 'courtReminder'
   | 'newGear'
   | 'welcome'
-  | 'matchRecorded';
+  | 'matchRecorded'
+  | 'accessRequestSubmitted'
+  | 'accessApproved'
+  | 'accessRejected'
+  | 'accessInfoRequested'
+  | 'roleGranted';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -86,7 +91,7 @@ const build = (
   type: NotificationType,
   key: NotificationKey,
   params: NotificationParams,
-  route: string,
+  route?: string,
 ): NotifyInput => ({
   type,
   key,
@@ -188,3 +193,20 @@ export const matchRecorded = (
     { recorderName, result, score: scoreLine(sets) },
     `/play/match/${matchId}`,
   );
+
+// Back-office account notifications. No in-app route: the mobile app has no
+// screen for them, and the back-office links them itself.
+export const accessRequestSubmitted = (applicantName: string, roleName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'accessRequestSubmitted', { applicantName, roleName });
+
+export const accessApproved = (roleName: string, scopeName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'accessApproved', { roleName, scopeName });
+
+export const accessRejected = (roleName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'accessRejected', { roleName });
+
+export const accessInfoRequested = (roleName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'accessInfoRequested', { roleName });
+
+export const roleGranted = (roleName: string, scopeName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'roleGranted', { roleName, scopeName });

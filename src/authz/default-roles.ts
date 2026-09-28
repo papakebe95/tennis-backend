@@ -1,4 +1,4 @@
-import { RoleScope } from '@prisma/client';
+import { OrganizationType, RoleScope } from '@prisma/client';
 import { ALL_PERMISSIONS, type PermissionKey } from './permissions.js';
 
 // Roles the platform ships with. Created at boot when missing; after that the
@@ -10,6 +10,7 @@ export interface RoleDefinition {
   name: string;
   description: string;
   scope: RoleScope;
+  organizationType?: OrganizationType;
   isSystem?: boolean;
   selfRegistrable?: boolean;
   permissions: readonly PermissionKey[];
@@ -60,6 +61,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
     name: 'Federation Admin',
     description: 'Runs a federation: profile, affiliated clubs, players, official competitions and rankings.',
     scope: RoleScope.ORGANIZATION,
+    organizationType: OrganizationType.FEDERATION,
     selfRegistrable: true,
     permissions: [
       'federation.view',
@@ -78,6 +80,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
     name: 'Federation Official',
     description: 'Read access to federation data and rankings.',
     scope: RoleScope.ORGANIZATION,
+    organizationType: OrganizationType.FEDERATION,
     permissions: [
       'federation.view',
       'federation.clubs.view',
@@ -94,6 +97,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
     name: 'Club Admin',
     description: 'Runs a club: profile, courts, members, bookings, payments and club tournaments.',
     scope: RoleScope.ORGANIZATION,
+    organizationType: OrganizationType.CLUB,
     selfRegistrable: true,
     permissions: [
       'club.view',
@@ -117,6 +121,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
     name: 'Club Staff',
     description: 'Front desk: bookings, members and payments.',
     scope: RoleScope.ORGANIZATION,
+    organizationType: OrganizationType.CLUB,
     permissions: [
       'club.view',
       'club.dashboard.view',
@@ -135,6 +140,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
     name: 'Coach',
     description: 'Club coach (coaching features to come).',
     scope: RoleScope.ORGANIZATION,
+    organizationType: OrganizationType.CLUB,
     permissions: ['club.view', 'court.view', 'member.view', 'booking.view'],
   },
   {

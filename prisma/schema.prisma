@@ -37,6 +37,15 @@ enum RoleScope {
   COMPETITION
 }
 
+enum AccessRequestStatus {
+  PENDING
+  // The reviewer asked the applicant for more information.
+  INFO_REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum OrganizationType {
   FEDERATION
   CLUB
@@ -210,26 +219,31 @@ enum NotificationType {
 // ---------------------------------------------------------------------------
 
 model User {
-  id                String      @id @default(cuid())
-  email             String      @unique
-  passwordHash      String
-  firstname         String
-  lastname          String
-  msisdn            String      @unique
-  status            UserStatus  @default(ACTIVE)
-  premiumTier       PremiumTier @default(FREE)
-  passwordChangedAt DateTime?
+  id                 String      @id @default(cuid())
+  email              String      @unique
+  passwordHash       String
+  firstname          String
+  lastname           String
+  msisdn             String      @unique
+  status             UserStatus  @default(ACTIVE)
+  premiumTier        PremiumTier @default(FREE)
+  passwordChangedAt  DateTime?
   // Embedded in access tokens; bumping it ends every session at once
   // (password change, suspension). Tokens carrying another value are refused.
-  tokenVersion Int @default(0)
-  lastLoginAt       DateTime?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  tokenVersion       Int         @default(0)
+  // Set after an administrator resets the password: the next session can
+  // only change it (see JwtAuthGuard).
+  mustChangePassword Boolean     @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   // Authorization grants (see UserRole); replaces the old single `role` column.
-  roles        UserRole[] @relation("UserRoleUser")
-  rolesGranted UserRole[] @relation("UserRoleGrantedBy")
-  auditLogs    AuditLog[]
+  roles                  UserRole[]      @relation("UserRoleUser")
+  accessRequests         AccessRequest[] @relation("AccessRequestApplicant")
+  accessRequestsReviewed AccessRequest[] @relation("AccessRequestReviewer")
+  rolesGranted           UserRole[]      @relation("UserRoleGrantedBy")
+  auditLogs              AuditLog[]
 
   playerProfile PlayerProfile?
   // Extra numbers on top of the primary `msisdn`.
@@ -325,10 +339,11 @@ model Organization {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  country   Country?   @relation(fields: [countryId], references: [id], onDelete: SetNull)
-  club      Club?
-  members   UserRole[]
-  auditLogs AuditLog[]
+  country        Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  club           Club?
+  members        UserRole[]
+  accessRequests AccessRequest[]
+  auditLogs      AuditLog[]
 
   @@index([type, status])
 }
@@ -346,23 +361,27 @@ model Permission {
 }
 
 model Role {
-  id              String    @id @default(cuid())
+  id               String            @id @default(cuid())
   // Stable machine key, e.g. "CLUB_ADMIN".
-  key             String    @unique
-  name            String
-  description     String?
+  key              String            @unique
+  name             String
+  description      String?
   // Level at which this role is granted (see UserRole).
-  scope           RoleScope
+  scope            RoleScope
+  // For ORGANIZATION roles: the kind of organization they apply to
+  // (CLUB_ADMIN → CLUB). Null: any kind.
+  organizationType OrganizationType?
   // System roles (SUPER_ADMIN) cannot be deleted and their permissions are
   // reset from code at boot.
-  isSystem        Boolean   @default(false)
+  isSystem         Boolean           @default(false)
   // Offered on the back-office registration form.
-  selfRegistrable Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  selfRegistrable  Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  permissions RolePermission[]
-  grants      UserRole[]
+  permissions    RolePermission[]
+  grants         UserRole[]
+  accessRequests AccessRequest[]
 }
 
 model RolePermission {
@@ -399,6 +418,39 @@ model UserRole {
   @@index([organizationId])
   @@index([competitionId])
   @@index([roleId])
+}
+
+// A request to hold a role, from the back-office registration form or from a
+// signed-in user. Approving it grants the role (creating the proposed
+// organization first when there is one).
+model AccessRequest {
+  id                   String              @id @default(cuid())
+  userId               String
+  roleId               String
+  // Existing organization the role would apply to…
+  organizationId       String?
+  // …or a new one to create on approval:
+  // { type, name, cityId?, countryId?, address?, phone?, email? }
+  proposedOrganization Json?
+  // Free text from the applicant (who they are, why).
+  message              String?
+  status               AccessRequestStatus @default(PENDING)
+  // Reviewer's question (INFO_REQUESTED) and the applicant's answer.
+  infoRequest          String?
+  infoResponse         String?
+  reviewerId           String?
+  reviewedAt           DateTime?
+  decisionReason       String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  user         User          @relation("AccessRequestApplicant", fields: [userId], references: [id], onDelete: Cascade)
+  role         Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  reviewer     User?         @relation("AccessRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId])
 }
 
 // Append-only record of who changed what. Written in the same transaction as

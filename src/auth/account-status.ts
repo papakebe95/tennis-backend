@@ -11,7 +11,7 @@ const BLOCKED: Partial<Record<UserStatus, { code: string; key: MessageKey }>> = 
 
 /**
  * Throws when an account may not hold a session. PENDING accounts may: they
- * sign in to a restricted area (see AllowPending) to follow their request.
+ * sign in to a restricted area (see AllowRestricted) to follow their request.
  *
  * `asSession` answers 401 instead of 403 — used on already-issued tokens, so
  * a client treats it as "session over" and signs out.
@@ -22,6 +22,12 @@ export function assertMaySignIn(status: UserStatus, asSession = false): void {
   const body = { message: t(blocked.key), code: blocked.code };
   throw asSession ? new UnauthorizedException(body) : new ForbiddenException(body);
 }
+
+export const passwordChangeRequired = () =>
+  new ForbiddenException({
+    message: t('errors.auth.passwordChangeRequired'),
+    code: 'PASSWORD_CHANGE_REQUIRED',
+  });
 
 export const pendingAccount = () =>
   new ForbiddenException({ message: t('errors.auth.accountPending'), code: 'ACCOUNT_PENDING' });

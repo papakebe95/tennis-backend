@@ -1,5 +1,5 @@
 import { RoleScope } from '@prisma/client';
-import type { PermissionKey } from './permissions.js';
+import { RESTRICTIONS, type PermissionKey } from './permissions.js';
 
 // ---------------------------------------------------------------------------
 // Pure permission matching, kept free of Nest/Prisma so the rules are easy to
@@ -85,4 +85,21 @@ export function scopeFilter(
   filter.organizationIds = [...new Set(filter.organizationIds)];
   filter.competitionIds = [...new Set(filter.competitionIds)];
   return filter;
+}
+
+/**
+ * Permissions in `required` (restrictions aside) that the actor does NOT hold
+ * on `chain`. Empty means the actor may hand these permissions out, or act on
+ * an account holding them, without gaining anything they don't already have.
+ */
+export function missingFor(
+  grants: readonly Grant[],
+  required: Iterable<string>,
+  chain: readonly Scope[] = [GLOBAL_SCOPE],
+): string[] {
+  return [...new Set(required)].filter(
+    (permission) =>
+      !RESTRICTIONS.has(permission) &&
+      !holds(grants, permission as PermissionKey, chain),
+  );
 }

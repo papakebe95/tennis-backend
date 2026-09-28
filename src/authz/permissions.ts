@@ -89,3 +89,9 @@ export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[];
 
 export const isPermissionKey = (value: string): value is PermissionKey =>
   Object.hasOwn(PERMISSIONS, value);
+
+/**
+ * Markers that restrict rather than grant. They are ignored when comparing
+ * what two users may do (anti-escalation checks).
+ */
+export const RESTRICTIONS: ReadonlySet<string> = new Set<PermissionKey>(['match.assigned_only']);

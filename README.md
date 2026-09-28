@@ -227,6 +227,38 @@ characters with upper and lower case letters, a digit and a symbol. It
 revokes every refresh token and every older access token (`User.tokenVersion`),
 then returns a fresh token pair for the current session.
 
+### Back-office administration API
+
+All under `Authorization: Bearer`, each endpoint checking one permission
+(Swagger at `/docs` lists them). Lists take `?page&pageSize&q&sort=field:dir`
+and return `{ items, total, page, pageSize }`.
+
+| Area | Endpoints | Permission |
+|---|---|---|
+| Users | `GET /admin/users`, `GET /admin/users/:id`, `PATCH /admin/users/:id/status`, `POST /admin/users/:id/reset-password` | `user.view`, `user.status.manage`, `user.password.reset` |
+| Role grants | `POST /admin/users/:id/roles`, `DELETE /admin/users/:id/roles/:grantId` | `user.roles.assign` *where the grant applies* |
+| Roles | `GET/POST /admin/roles`, `PATCH/DELETE /admin/roles/:id`, `PUT /admin/roles/:id/permissions`, `GET /admin/permissions` | `role.view`, `role.manage` |
+| Access requests | `GET /admin/access-requests`, `GET …/:id`, `POST …/:id/approve \| reject \| request-info` | `access_request.review` |
+| Dashboard | `GET /admin/dashboard` | `dashboard.global.view` |
+| Audit log | `GET /admin/audit-logs`, `GET /admin/audit-logs/facets` | `audit.view` (rows limited to the caller's scopes) |
+| Pickers | `GET /admin/lookups/organizations`, `GET /admin/lookups/competitions` | `user.roles.assign` |
+
+Rules enforced server-side:
+
+- An administrator can't grant a role carrying permissions they don't hold there.
+- They can't act on an account with more rights than their own, or on their own account.
+- The platform always keeps one active Super Admin.
+- Resetting a password returns a one-time temporary password. The account must change it before doing anything else (`403 PASSWORD_CHANGE_REQUIRED`).
+
+### Access requests (sign-up for administrators and organizers)
+
+- `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.
+- `GET /access-requests/organizations?type=CLUB&q=` (public): organizations an applicant can claim.
+- `POST /auth/register-applicant`: creates a PENDING account and its request together, and signs it in.
+- `POST /access-requests`, `GET /access-requests/mine`, `PATCH /access-requests/:id/respond` and `POST /access-requests/:id/cancel`: for signed-in and pending users.
+
+Approving a request creates the proposed organization if there is one, grants the role and activates the account, all in one transaction.
+
 ### API documentation
 
 Swagger UI is served at `/docs` outside production (or with `API_DOCS=true`).

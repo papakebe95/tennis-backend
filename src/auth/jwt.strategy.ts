@@ -18,6 +18,8 @@ export interface AuthenticatedUser {
   userId: string;
   email: string;
   status: UserStatus;
+  /** Set after an admin reset: only the password change is allowed. */
+  mustChangePassword: boolean;
 }
 
 @Injectable()
@@ -41,7 +43,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtAccessPayload): Promise<AuthenticatedUser> {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, status: true, tokenVersion: true },
+      select: { id: true, email: true, status: true, tokenVersion: true, mustChangePassword: true },
     });
     if (!user) throw new UnauthorizedException();
     assertMaySignIn(user.status, true);
@@ -51,6 +53,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         code: 'SESSION_REVOKED',
       });
     }
-    return { userId: user.id, email: user.email, status: user.status };
+    return {
+      userId: user.id,
+      email: user.email,
+      status: user.status,
+      mustChangePassword: user.mustChangePassword,
+    };
   }
 }

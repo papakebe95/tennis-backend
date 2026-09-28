@@ -13,6 +13,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
+import { RegisterApplicantDto } from '../access-requests/access-requests.dto.js';
+import { AccessRequestsService } from '../access-requests/access-requests.service.js';
 import { AuthzService } from '../authz/authz.service.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { t } from '../i18n/i18n.js';
@@ -21,7 +23,7 @@ import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
-import { AllowPending, JwtAuthGuard } from './jwt-auth.guard.js';
+import { AllowRestricted, JwtAuthGuard } from './jwt-auth.guard.js';
 import type { AuthenticatedUser } from './jwt.strategy.js';
 
 // Browser clients (the back-office) send `X-Auth-Mode: cookie`: their refresh
@@ -45,6 +47,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly authz: AuthzService,
     private readonly config: ConfigService,
+    private readonly accessRequests: AccessRequestsService,
   ) {}
 
   @Post('register')
@@ -54,6 +57,29 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     return this.respond(req, res, await this.authService.register(dto));
+  }
+
+  /**
+   * Back-office sign-up: creates a PENDING account together with its access
+   * request, and signs it in to the restricted "pending" area.
+   */
+  @Post('register-applicant')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  async registerApplicant(
+    @Body() dto: RegisterApplicantDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const request = await this.accessRequests.validate(null, dto);
+    let applicantId = '';
+    const pair = await this.authService.register(dto, {
+      inTransaction: async (tx, userId) => {
+        applicantId = userId;
+        await this.accessRequests.createInTx(tx, userId, request);
+      },
+    });
+    await this.accessRequests.notifyReviewers(applicantId, request.role.name);
+    return this.respond(req, res, pair);
   }
 
   @Post('login')
@@ -86,7 +112,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  @AllowPending()
+  @AllowRestricted()
   async logout(
     @Body() dto: RefreshTokenDto,
     @Req() req: Request,
@@ -99,7 +125,7 @@ export class AuthController {
   /** Who is signed in, and every role they hold with its scope. */
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  @AllowPending()
+  @AllowRestricted()
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.authz.describeAccess(user.userId);
   }
@@ -107,7 +133,7 @@ export class AuthController {
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
-  @AllowPending()
+  @AllowRestricted()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async changePassword(
     @CurrentUser() user: AuthenticatedUser,

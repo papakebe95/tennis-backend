@@ -24,7 +24,17 @@ export async function syncAuthorizationCatalog(prisma: PrismaClient) {
   for (const role of DEFAULT_ROLES) {
     const { permissions, ...fields } = role;
     const existing = await prisma.role.findUnique({ where: { key: role.key } });
-    if (existing && !role.isSystem) continue;
+    if (existing && !role.isSystem) {
+      // Fill in fields added after the role was created; never overwrite
+      // what the Super Admin edited.
+      if (existing.organizationType === null && fields.organizationType) {
+        await prisma.role.update({
+          where: { id: existing.id },
+          data: { organizationType: fields.organizationType },
+        });
+      }
+      continue;
+    }
 
     await prisma.$transaction(async (tx) => {
       const saved = existing

@@ -114,6 +114,7 @@ export class AuthzService implements OnApplicationBootstrap {
           status: true,
           lastLoginAt: true,
           passwordChangedAt: true,
+          mustChangePassword: true,
           playerProfile: { select: { avatarUrl: true } },
         },
       }),

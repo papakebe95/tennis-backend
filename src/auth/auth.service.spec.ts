@@ -60,6 +60,12 @@ describe('AuthService.register', () => {
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
+  it('stores a local number in international form', async () => {
+    const { service, prisma } = build();
+    await service.register(dto({ msisdn: '77 000 01 01' }));
+    expect(prisma.user.create.mock.calls[0][0].data.msisdn).toBe('+221770000101');
+  });
+
   it('normalizes the phone before checking and storing it', async () => {
     const { service, prisma } = build();
     await service.register(dto({ msisdn: '+221 77 000-01-01' }));
@@ -154,8 +160,8 @@ describe('AuthService.login', () => {
   it('finds a local phone number stored in international form', async () => {
     const { service, prisma } = buildLogin(await account());
     await service.login({ identifier: '77 000 00 01', password: 'Admin@2026!' });
-    expect(prisma.user.findFirst).toHaveBeenCalledWith({
-      where: { msisdn: { in: ['+221770000001', '+770000001'] } },
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { msisdn: '+221770000001' },
     });
   });
 

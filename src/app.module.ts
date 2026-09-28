@@ -6,6 +6,7 @@ import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthzModule } from './authz/authz.module.js';
+import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ClubsModule } from './clubs/clubs.module.js';
@@ -27,6 +28,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     AuditModule,
     AuthzModule,
     AuthModule,
+    AdminModule,
     UsersModule,
     ClubsModule,
     CourtsModule,
