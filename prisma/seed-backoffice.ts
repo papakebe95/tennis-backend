@@ -1,0 +1,147 @@
+// Back-office seed: roles & permissions, sample organizations and one
+// development account per role. DEVELOPMENT ONLY — refuses to run in
+// production. Every account signs in with DEV_PASSWORD (see README).
+import { OrganizationType, UserStatus, type PrismaClient } from '@prisma/client';
+import bcrypt from 'bcrypt';
+import { syncAuthorizationCatalog } from '../src/authz/catalog-sync.js';
+
+export const DEV_PASSWORD = 'Admin@2026!';
+
+type GrantSeed =
+  | { role: string }
+  | { role: string; organization: string }
+  | { role: string; competition: string };
+
+interface AccountSeed {
+  msisdn: string;
+  email: string;
+  firstname: string;
+  lastname: string;
+  status?: UserStatus;
+  grants: GrantSeed[];
+}
+
+// Organization references: 'federation', 'community', or 'club:<index>' in
+// clubs sorted by name. Competition references are competition names.
+const ACCOUNTS: AccountSeed[] = [
+  { msisdn: '+221770000001', email: 'superadmin@tennis.dev', firstname: 'Awa', lastname: 'Sarr', grants: [{ role: 'SUPER_ADMIN' }] },
+  { msisdn: '+221770000002', email: 'federation@tennis.dev', firstname: 'Ibrahima', lastname: 'Ndiaye', grants: [{ role: 'FEDERATION_ADMIN', organization: 'federation' }] },
+  {
+    msisdn: '+221770000003', email: 'clubadmin@tennis.dev', firstname: 'Mamadou', lastname: 'Diop',
+    // Two clubs, to exercise the context switcher.
+    grants: [{ role: 'CLUB_ADMIN', organization: 'club:0' }, { role: 'CLUB_ADMIN', organization: 'club:1' }],
+  },
+  {
+    msisdn: '+221770000004', email: 'organizer@tennis.dev', firstname: 'Khady', lastname: 'Ba',
+    grants: [{ role: 'TOURNAMENT_ORGANIZER' }, { role: 'COMPETITION_ORGANIZER', competition: 'Dakar Open Amateur' }],
+  },
+  { msisdn: '+221770000005', email: 'director@tennis.dev', firstname: 'Fatou', lastname: 'Sow', grants: [{ role: 'TOURNAMENT_DIRECTOR', competition: 'Teranga Cup' }] },
+  { msisdn: '+221770000006', email: 'official@tennis.dev', firstname: 'Amadou', lastname: 'Faye', grants: [{ role: 'OFFICIAL', competition: 'Teranga Cup' }] },
+  { msisdn: '+221770000007', email: 'coach@tennis.dev', firstname: 'Ousmane', lastname: 'Gueye', grants: [{ role: 'COACH', organization: 'club:0' }] },
+  { msisdn: '+221770000008', email: 'staff@tennis.dev', firstname: 'Mariama', lastname: 'Cisse', grants: [{ role: 'CLUB_STAFF', organization: 'club:2' }] },
+  // Awaiting validation: signs in to the restricted "pending" area only.
+  { msisdn: '+221770000009', email: 'pending@tennis.dev', firstname: 'Pape', lastname: 'Thiam', status: UserStatus.PENDING, grants: [] },
+];
+
+export async function seedBackOffice(prisma: PrismaClient) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('The back-office seed creates known passwords: never run it in production');
+  }
+
+  await syncAuthorizationCatalog(prisma);
+
+  const senegal = await prisma.country.findUnique({ where: { code: 'SN' } });
+  const orgFields = { countryId: senegal?.id ?? null, status: 'ACTIVE' as const };
+  const federation = await prisma.organization.upsert({
+    where: { slug: 'fst' },
+    update: {},
+    create: {
+      ...orgFields,
+      type: OrganizationType.FEDERATION,
+      slug: 'fst',
+      name: 'Fédération Sénégalaise de Tennis',
+      description: 'National governing body for tennis in Senegal (sample data).',
+      email: 'contact@fst.example',
+      phone: '+221338000000',
+      website: 'https://fst.example',
+      address: 'Dakar, Senegal',
+    },
+  });
+  const community = await prisma.organization.upsert({
+    where: { slug: 'dakar-tennis-community' },
+    update: {},
+    create: {
+      ...orgFields,
+      type: OrganizationType.COMMUNITY,
+      slug: 'dakar-tennis-community',
+      name: 'Dakar Tennis Community',
+      description: 'Independent players organizing friendly tournaments (sample data).',
+    },
+  });
+  const clubs = await prisma.club.findMany({ orderBy: { name: 'asc' }, select: { organizationId: true } });
+
+  const organizationId = (ref: string): string | null => {
+    if (ref === 'federation') return federation.id;
+    if (ref === 'community') return community.id;
+    return clubs[Number(ref.split(':')[1])]?.organizationId ?? null;
+  };
+  const competitionIds = new Map(
+    (await prisma.competition.findMany({ select: { id: true, name: true } })).map((c) => [c.name, c.id]),
+  );
+  const roleIds = new Map(
+    (await prisma.role.findMany({ select: { id: true, key: true } })).map((r) => [r.key, r.id]),
+  );
+
+  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+  let superAdminId: string | null = null;
+  let grantCount = 0;
+
+  for (const { grants, status = UserStatus.ACTIVE, ...account } of ACCOUNTS) {
+    const user = await prisma.user.upsert({
+      where: { msisdn: account.msisdn },
+      update: { ...account, status, passwordHash, passwordChangedAt: null },
+      create: { ...account, status, passwordHash },
+    });
+    superAdminId ??= user.id;
+
+    // Idempotent: the seeded account's grants are exactly the list above.
+    // Audit rows are only written the first time.
+    const firstRun = (await prisma.userRole.count({ where: { userId: user.id } })) === 0;
+    await prisma.userRole.deleteMany({ where: { userId: user.id } });
+    for (const grant of grants) {
+      const roleId = roleIds.get(grant.role);
+      if (!roleId) throw new Error(`Unknown role ${grant.role}`);
+      const scope =
+        'organization' in grant
+          ? { organizationId: organizationId(grant.organization) }
+          : 'competition' in grant
+            ? { competitionId: competitionIds.get(grant.competition) ?? null }
+            : {};
+      if (Object.values(scope).some((id) => id === null)) {
+        console.warn(`Skipped ${grant.role} for ${account.email}: scope not found`);
+        continue;
+      }
+      const row = await prisma.userRole.create({
+        data: { userId: user.id, roleId, grantedById: superAdminId, ...scope },
+      });
+      grantCount++;
+      if (firstRun) {
+        await prisma.auditLog.create({
+          data: {
+            actorId: superAdminId,
+            action: 'user.roles.granted',
+            entityType: 'UserRole',
+            entityId: row.id,
+            organizationId: 'organizationId' in scope ? scope.organizationId : null,
+            competitionId: 'competitionId' in scope ? scope.competitionId : null,
+            after: { userId: user.id, role: grant.role, ...scope },
+          },
+        });
+      }
+    }
+  }
+
+  console.log(
+    `Seeded back-office: ${ACCOUNTS.length} dev accounts (password "${DEV_PASSWORD}"), ${grantCount} grants, federation + community`,
+  );
+}

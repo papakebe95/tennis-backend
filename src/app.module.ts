@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
+import { AuthzModule } from './authz/authz.module.js';
+import { AuditModule } from './audit/audit.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ClubsModule } from './clubs/clubs.module.js';
 import { CourtsModule } from './courts/courts.module.js';
@@ -18,7 +21,11 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Limits are set per controller with @Throttle (auth routes only for now).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
+    AuditModule,
+    AuthzModule,
     AuthModule,
     UsersModule,
     ClubsModule,

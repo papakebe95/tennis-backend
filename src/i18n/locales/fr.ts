@@ -8,6 +8,7 @@ export const fr: Messages = {
       notFound: 'Introuvable',
       internal: 'Une erreur est survenue, veuillez réessayer',
       unexpected: 'Une erreur est survenue, veuillez réessayer',
+      tooManyRequests: 'Trop de tentatives. Patientez un instant puis réessayez.',
     },
     auth: {
       invalidCredentials: 'Identifiants invalides',
@@ -16,6 +17,14 @@ export const fr: Messages = {
       phoneTaken: 'Ce numéro de téléphone est déjà enregistré',
       emailOrPhoneTaken:
         'Cet e-mail ou ce numéro de téléphone est déjà enregistré',
+      identifierRequired: 'Saisissez votre numéro de téléphone ou votre e-mail',
+      accountPending: 'Votre compte est en attente de validation par un administrateur',
+      accountSuspended: 'Votre compte est suspendu. Contactez un administrateur.',
+      accountDisabled: 'Votre compte est désactivé. Contactez un administrateur.',
+      accountRejected: "Votre demande d'inscription a été refusée",
+      sessionRevoked: 'Votre session a expiré. Veuillez vous reconnecter.',
+      wrongPassword: 'Votre mot de passe actuel est incorrect',
+      samePassword: "Le nouveau mot de passe doit être différent de l'actuel",
     },
     phone: {
       invalid:
@@ -102,6 +111,9 @@ export const fr: Messages = {
     isArray: '{property} doit être un tableau',
     arrayMinSize: '{property} doit contenir au moins {min} éléments',
     arrayMaxSize: '{property} doit contenir au plus {max} éléments',
+    isNotEmpty: '{property} ne doit pas être vide',
+    isStrongPassword:
+      '{property} doit contenir au moins 10 caractères dont une majuscule, une minuscule, un chiffre et un symbole',
   },
   tiers: {
     ROOKIE: 'Débutant',

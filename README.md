@@ -53,6 +53,9 @@ The API listens on `http://localhost:3000` by default (`PORT` in `.env`).
 | `JWT_ACCESS_SECRET`   | Secret used to sign 15m access tokens                |
 | `JWT_REFRESH_SECRET`  | Server-side pepper mixed into refresh token hashes   |
 | `PORT`                | HTTP port (default `3000`)                           |
+| `CORS_ORIGINS`        | Comma-separated browser origins allowed with credentials (the back-office). Unset: any origin, no cookies |
+| `DEFAULT_CALLING_CODE`| Country code assumed for phone numbers typed without one at login (default `221`) |
+| `TRUST_PROXY`         | `1` behind one reverse proxy (client IP for audit log and rate limiting) |
 
 ## Languages (i18n)
 
@@ -77,11 +80,63 @@ To add a message, put the key in `src/i18n/locales/en.ts` and `fr.ts` (the
 build fails if they differ) and use `t('errors.…')`. To add a language, add
 it to `SUPPORTED_LANGS` and create its locale file.
 
+## Back-office: accounts, roles and permissions
+
+The Angular back-office lives in the sibling project
+[`tennis-backoffice`](../tennis-backoffice); its architecture and roadmap are
+in `tennis-backoffice/docs/ARCHITECTURE.md`.
+
+- **Authorization is permission-based and scoped.** Permissions are defined in
+  code (`src/authz/permissions.ts`) and synced to the `Permission` table at
+  boot. Roles (`Role`) group permissions, and a user holds roles through
+  `UserRole` grants that apply platform-wide, to one organization (federation,
+  club, community) or to one competition. A user can hold any number of grants.
+- **Endpoints declare what they need** with
+  `@Authorize('court.manage', { resource: 'court', param: 'courtId' })`. The
+  guard reads the resource's owner from the database, never from the request,
+  so changing an id in a payload can't reach another club's data.
+- **Account status** (`PENDING | ACTIVE | SUSPENDED | DISABLED | REJECTED`) is
+  re-checked on every request. Changing the password ends every other session.
+- Every club is an `Organization` of type `CLUB` (`Club.organizationId`).
+- Important changes are written to `AuditLog` in the same transaction
+  (`AuditService.record`).
+
+### Development accounts
+
+`npm run db:seed` creates one account per role. **All use the password
+`Admin@2026!`. Development only: the seed refuses to run with
+`NODE_ENV=production`.** Local numbers work at login (`77 000 00 01`).
+
+| Account | Phone | Email | Access |
+|---|---|---|---|
+| Super Admin | +221770000001 | superadmin@tennis.dev | whole platform |
+| Federation Admin | +221770000002 | federation@tennis.dev | Fédération Sénégalaise de Tennis |
+| Club Admin | +221770000003 | clubadmin@tennis.dev | two clubs (ASAC, ASTU) |
+| Tournament Organizer | +221770000004 | organizer@tennis.dev | may create tournaments; organizer of Dakar Open Amateur |
+| Tournament Director | +221770000005 | director@tennis.dev | Teranga Cup |
+| Official | +221770000006 | official@tennis.dev | Teranga Cup |
+| Coach | +221770000007 | coach@tennis.dev | first club |
+| Club Staff | +221770000008 | staff@tennis.dev | third club |
+| Pending applicant | +221770000009 | pending@tennis.dev | awaiting validation |
+
+The existing player accounts keep the password `password123`.
+
+### First Super Admin in production
+
+The seed never runs in production. Create the first Super Admin with:
+
+```bash
+SUPER_ADMIN_MSISDN=+221… SUPER_ADMIN_EMAIL=… SUPER_ADMIN_PASSWORD='…' \
+SUPER_ADMIN_FIRSTNAME=… SUPER_ADMIN_LASTNAME=… npm run admin:create
+```
+
+An existing account with that phone number is promoted instead of being
+created.
+
 ## Implemented endpoints
 
 Everything below is fully implemented (controller + service + Prisma
-persistence). Everything in [Domain modules still to build](#domain-modules-still-to-build)
-is schema-only for now.
+persistence).
 
 ### `POST /auth/register`
 
@@ -108,10 +163,25 @@ Creates a user and returns an access/refresh token pair.
 
 ### `POST /auth/login`
 
+Sign in with a phone number (any common format; local numbers get
+`DEFAULT_CALLING_CODE`) or an email as `identifier`. The older `email` field
+is still accepted.
+
 ```json
 // Request
-{ "email": "player@example.com", "password": "supersecret1" }
+{ "identifier": "77 123 45 67", "password": "supersecret1" }
 ```
+
+Failures carry a machine `code` next to the localized `message`:
+`INVALID_CREDENTIALS` (401), `ACCOUNT_SUSPENDED`, `ACCOUNT_DISABLED` and
+`ACCOUNT_REJECTED` (403). `PENDING` accounts may sign in, but every endpoint
+except `/auth/me`, `/auth/change-password` and `/auth/logout` answers
+`403 ACCOUNT_PENDING`. Auth routes are rate-limited (login: 10/min per IP).
+
+**Browser clients** send `X-Auth-Mode: cookie`. The refresh token is then set
+as an httpOnly `SameSite=Strict` cookie and only `{ accessToken }` is
+returned; `/auth/refresh-token` and `/auth/logout` read the cookie when the
+body has no token.
 
 ```json
 // Response 200
@@ -144,6 +214,23 @@ token.
 
 Response: `200 OK`, empty body.
 
+### `GET /auth/me`
+
+The signed-in user and every active grant (role, scope, organization or
+competition, permissions). The back-office builds its menus from this; the
+API still checks each call.
+
+### `POST /auth/change-password`
+
+`{ "currentPassword": "…", "newPassword": "…" }`. The new password needs 10+
+characters with upper and lower case letters, a digit and a symbol. It
+revokes every refresh token and every older access token (`User.tokenVersion`),
+then returns a fresh token pair for the current session.
+
+### API documentation
+
+Swagger UI is served at `/docs` outside production (or with `API_DOCS=true`).
+
 ### `GET /users/me`
 
 Requires `Authorization: Bearer <accessToken>`. Returns the authenticated
@@ -157,7 +244,6 @@ user (password hash stripped) joined with their `PlayerProfile`, if any.
   "firstname": "Ana",
   "lastname": "Ivanovic",
   "msisdn": "+15551234567",
-  "role": "PLAYER",
   "premiumTier": "FREE",
   "createdAt": "2026-09-17T11:00:00.000Z",
   "updatedAt": "2026-09-17T11:00:00.000Z",
@@ -169,24 +255,12 @@ user (password hash stripped) joined with their `PlayerProfile`, if any.
 
 Unauthenticated liveness check: `{ "status": "ok" }`.
 
-## Domain modules still to build
+## Roadmap
 
-The Prisma schema (`prisma/schema.prisma`) already models the full domain,
-but only Auth/Users have NestJS modules wired up so far. Next work session
-should pick up from here, one feature module at a time:
-
-- **Clubs** — `Club`, `Court` (listing, search by location/amenities)
-- **Bookings** — `Booking` (court booking; overlap-prevention must be
-  enforced in the service layer — Prisma has no exclusion-constraint support)
-- **Partner requests** — `PartnerRequest`, `PartnerMatchCandidate`
-- **Matches** — `Match`, `MatchSet` (recording/scoring)
-- **Competitions** — `Competition`, `CompetitionParticipant`,
-  `CompetitionRound`, `CompetitionMatch` (bracket progression via
-  `CompetitionMatch.nextMatchId`; detailed scores reuse `Match`/`MatchSet`
-  via `CompetitionMatch.linkedMatchId`)
-- **Favorites** — `Favorite` (polymorphic target, validated in the service
-  layer since `targetId` is not a DB-level foreign key)
-- **Notifications** — `Notification`
+Player-facing modules (clubs, courts, bookings, matches, competitions,
+notifications, marketplace, stories) are implemented; the endpoint list above
+covers auth only. The back-office (`/admin/*`) is being built in phases —
+see `../tennis-backoffice/docs/ARCHITECTURE.md` (Part 7).
 
 ## Scripts
 
@@ -196,4 +270,6 @@ npm run build        # nest build
 npm run test          # unit tests (vitest)
 npm run test:e2e      # e2e tests (vitest)
 npm run lint           # oxlint
+npm run db:seed        # dev data + back-office accounts
+npm run admin:create   # bootstrap a Super Admin (see above)
 ```

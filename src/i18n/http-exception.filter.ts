@@ -15,6 +15,7 @@ const DEFAULT_MESSAGES: Record<string, MessageKey> = {
   Forbidden: 'errors.http.forbidden',
   'Not Found': 'errors.http.notFound',
   'Internal Server Error': 'errors.http.internal',
+  'ThrottlerException: Too Many Requests': 'errors.http.tooManyRequests',
 };
 
 /**
@@ -44,7 +45,9 @@ export class LocalizedExceptionFilter implements ExceptionFilter {
     const payload: Record<string, unknown> =
       typeof body === 'string'
         ? { statusCode: status, message: body }
-        : { ...body };
+        : // Exceptions thrown with an object ({ message, code }) carry no
+          // statusCode of their own; every error body has one.
+          { statusCode: status, ...body };
 
     const key =
       typeof payload.message === 'string'

@@ -11,6 +11,7 @@ export const en = {
       notFound: 'Not Found',
       internal: 'Internal Server Error',
       unexpected: 'Internal server error',
+      tooManyRequests: 'Too many attempts. Please wait a moment and try again.',
     },
     auth: {
       invalidCredentials: 'Invalid credentials',
@@ -18,6 +19,14 @@ export const en = {
       emailTaken: 'Email is already registered',
       phoneTaken: 'This phone number is already registered',
       emailOrPhoneTaken: 'This email or phone number is already registered',
+      identifierRequired: 'Enter your phone number or email',
+      accountPending: 'Your account is awaiting validation by an administrator',
+      accountSuspended: 'Your account is suspended. Contact an administrator.',
+      accountDisabled: 'Your account is disabled. Contact an administrator.',
+      accountRejected: 'Your registration request was rejected',
+      sessionRevoked: 'Your session has ended. Please sign in again.',
+      wrongPassword: 'Your current password is incorrect',
+      samePassword: 'The new password must be different from the current one',
     },
     phone: {
       invalid:
@@ -103,6 +112,9 @@ export const en = {
     isArray: '{property} must be an array',
     arrayMinSize: '{property} must contain at least {min} items',
     arrayMaxSize: '{property} must contain at most {max} items',
+    isNotEmpty: '{property} should not be empty',
+    isStrongPassword:
+      '{property} must be at least 10 characters and include an upper-case letter, a lower-case letter, a number and a symbol',
   },
   tiers: {
     ROOKIE: 'Rookie',

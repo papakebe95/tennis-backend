@@ -11,8 +11,11 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizePhone } from '../common/utils/phone.js';
+import { AuditService } from '../audit/audit.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { assertMaySignIn } from './account-status.js';
 import { t } from '../i18n/i18n.js';
 
 const ACCESS_TOKEN_TTL = '15m';
@@ -30,6 +33,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   async register(dto: RegisterDto): Promise<TokenPair> {
@@ -80,26 +84,100 @@ export class AuthService {
       throw error;
     }
 
-    return this.issueTokenPair(user.id, user.email);
+    return this.issueTokenPair(user);
   }
 
+  /** Signs in with a phone number or an email (`identifier`, or legacy `email`). */
   async login(dto: LoginDto): Promise<TokenPair> {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (!user) {
-      throw new UnauthorizedException(t('errors.auth.invalidCredentials'));
+    const identifier = (dto.identifier ?? dto.email ?? '').trim();
+    if (!identifier) {
+      throw new BadRequestException(t('errors.auth.identifierRequired'));
     }
+    const user = await this.findByIdentifier(identifier);
+    const invalid = () =>
+      new UnauthorizedException({
+        message: t('errors.auth.invalidCredentials'),
+        code: 'INVALID_CREDENTIALS',
+      });
+    if (!user) throw invalid();
 
     const passwordMatches = await bcrypt.compare(
       dto.password,
       user.passwordHash,
     );
-    if (!passwordMatches) {
-      throw new UnauthorizedException(t('errors.auth.invalidCredentials'));
+    if (!passwordMatches) throw invalid();
+
+    // Only after the password is proven, so status can't be probed.
+    assertMaySignIn(user.status);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return this.issueTokenPair(user);
+  }
+
+  private findByIdentifier(identifier: string) {
+    if (identifier.includes('@')) {
+      return this.prisma.user.findFirst({
+        where: { email: { equals: identifier, mode: 'insensitive' } },
+      });
+    }
+    const msisdn = normalizePhone(identifier);
+    if (!msisdn) return null;
+    // Stored numbers are international ("+221…"); people often type the
+    // local form ("77 000 00 01") or omit the "+".
+    const callingCode = this.configService.get<string>('DEFAULT_CALLING_CODE', '221');
+    const candidates = msisdn.startsWith('+')
+      ? [msisdn]
+      : [`+${callingCode}${msisdn}`, `+${msisdn}`];
+    return this.prisma.user.findFirst({ where: { msisdn: { in: candidates } } });
+  }
+
+  /**
+   * Changes the password, ends every other session (refresh tokens revoked,
+   * older access tokens rejected via passwordChangedAt) and returns a fresh
+   * token pair for the current one.
+   */
+  async changePassword(userId: string, dto: ChangePasswordDto): Promise<TokenPair> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+    if (!(await bcrypt.compare(dto.currentPassword, user.passwordHash))) {
+      throw new BadRequestException({
+        message: t('errors.auth.wrongPassword'),
+        code: 'WRONG_PASSWORD',
+      });
+    }
+    if (await bcrypt.compare(dto.newPassword, user.passwordHash)) {
+      throw new BadRequestException(t('errors.auth.samePassword'));
     }
 
-    return this.issueTokenPair(user.id, user.email);
+    const passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const saved = await tx.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, revoked: false },
+        data: { revoked: true },
+      });
+      await this.audit.record(
+        {
+          actorId: userId,
+          action: 'user.password.changed',
+          entityType: 'User',
+          entityId: userId,
+        },
+        tx,
+      );
+      return saved;
+    });
+    return this.issueTokenPair(updated);
   }
 
   /**
@@ -115,13 +193,14 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException(t('errors.auth.invalidRefreshToken'));
     }
+    assertMaySignIn(user.status);
 
     await this.prisma.refreshToken.update({
       where: { id: record.id },
       data: { revoked: true },
     });
 
-    return this.issueTokenPair(user.id, user.email);
+    return this.issueTokenPair(user);
   }
 
   async logout(rawToken: string): Promise<void> {
@@ -132,12 +211,14 @@ export class AuthService {
     });
   }
 
-  private async issueTokenPair(
-    userId: string,
-    email: string,
-  ): Promise<TokenPair> {
+  private async issueTokenPair(user: {
+    id: string;
+    email: string;
+    tokenVersion: number;
+  }): Promise<TokenPair> {
+    const userId = user.id;
     const accessToken = await this.jwtService.signAsync(
-      { sub: userId, email },
+      { sub: userId, email: user.email, ver: user.tokenVersion },
       {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
         expiresIn: ACCESS_TOKEN_TTL,

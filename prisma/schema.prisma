@@ -19,9 +19,35 @@ datasource db {
 // Enums
 // ---------------------------------------------------------------------------
 
-enum Role {
-  PLAYER
-  ADMIN
+// Lifecycle of an account. Players register straight to ACTIVE; back-office
+// applicants start PENDING until an access request is approved.
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DISABLED
+  REJECTED
+}
+
+// Level at which a role is granted: platform-wide, inside one organization
+// (federation / club / community), or inside one competition.
+enum RoleScope {
+  GLOBAL
+  ORGANIZATION
+  COMPETITION
+}
+
+enum OrganizationType {
+  FEDERATION
+  CLUB
+  COMMUNITY
+}
+
+enum OrganizationStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
 }
 
 enum PremiumTier {
@@ -184,16 +210,26 @@ enum NotificationType {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String      @id @default(cuid())
-  email        String      @unique
-  passwordHash String
-  firstname    String
-  lastname     String
-  msisdn       String      @unique
-  role         Role        @default(PLAYER)
-  premiumTier  PremiumTier @default(FREE)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  id                String      @id @default(cuid())
+  email             String      @unique
+  passwordHash      String
+  firstname         String
+  lastname          String
+  msisdn            String      @unique
+  status            UserStatus  @default(ACTIVE)
+  premiumTier       PremiumTier @default(FREE)
+  passwordChangedAt DateTime?
+  // Embedded in access tokens; bumping it ends every session at once
+  // (password change, suspension). Tokens carrying another value are refused.
+  tokenVersion Int @default(0)
+  lastLoginAt       DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Authorization grants (see UserRole); replaces the old single `role` column.
+  roles        UserRole[] @relation("UserRoleUser")
+  rolesGranted UserRole[] @relation("UserRoleGrantedBy")
+  auditLogs    AuditLog[]
 
   playerProfile PlayerProfile?
   // Extra numbers on top of the primary `msisdn`.
@@ -228,21 +264,21 @@ model RefreshToken {
 }
 
 model PlayerProfile {
-  id               String       @id @default(cuid())
-  userId           String       @unique
-  level            PlayerLevel
-  ntrpRating       Float?
-  preferredSurface Surface?
-  bio              String?
-  avatarUrl        String?
-  city             String?
-  dominantHand     DominantHand?
-  backhand         Backhand?
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  level              PlayerLevel
+  ntrpRating         Float?
+  preferredSurface   Surface?
+  bio                String?
+  avatarUrl          String?
+  city               String?
+  dominantHand       DominantHand?
+  backhand           Backhand?
   availabilityStatus AvailabilityStatus @default(AVAILABLE)
   // Short free text shown next to the status ("Back on court mid-October").
-  availabilityNote String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  availabilityNote   String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -263,34 +299,168 @@ model UserPhone {
 }
 
 // ---------------------------------------------------------------------------
+// Organizations & authorization
+//
+// Permissions are defined in code (src/authz/permissions.ts) and synced into
+// the Permission table at boot; roles are composed from them in the DB and
+// granted to users at a scope (UserRole). See src/authz/authz.service.ts for
+// how a grant's scope is matched against the resource being accessed.
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id          String             @id @default(cuid())
+  type        OrganizationType
+  name        String
+  slug        String             @unique
+  status      OrganizationStatus @default(ACTIVE)
+  logoUrl     String?
+  description String?
+  email       String?
+  phone       String?
+  website     String?
+  // { "facebook": "https://…", "instagram": "…" }
+  socialLinks Json?
+  countryId   String?
+  address     String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  country   Country?   @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  club      Club?
+  members   UserRole[]
+  auditLogs AuditLog[]
+
+  @@index([type, status])
+}
+
+model Permission {
+  // Stable key checked by the API, e.g. "court.manage".
+  key         String      @id
+  // UI grouping ("club", "tournament", …).
+  module      String
+  description String
+  // Scopes at which granting this permission makes sense.
+  scopes      RoleScope[]
+
+  roles RolePermission[]
+}
+
+model Role {
+  id              String    @id @default(cuid())
+  // Stable machine key, e.g. "CLUB_ADMIN".
+  key             String    @unique
+  name            String
+  description     String?
+  // Level at which this role is granted (see UserRole).
+  scope           RoleScope
+  // System roles (SUPER_ADMIN) cannot be deleted and their permissions are
+  // reset from code at boot.
+  isSystem        Boolean   @default(false)
+  // Offered on the back-office registration form.
+  selfRegistrable Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  permissions RolePermission[]
+  grants      UserRole[]
+}
+
+model RolePermission {
+  roleId        String
+  permissionKey String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([roleId, permissionKey])
+  @@index([permissionKey])
+}
+
+// A role granted to a user. organizationId / competitionId say where it
+// applies and must match the role's scope (checked in AuthzService; a CHECK
+// constraint forbids setting both). Revoking keeps the row for history.
+model UserRole {
+  id             String    @id @default(cuid())
+  userId         String
+  roleId         String
+  organizationId String?
+  competitionId  String?
+  grantedById    String?
+  grantedAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  user         User          @relation("UserRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  role         Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  competition  Competition?  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  grantedBy    User?         @relation("UserRoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([organizationId])
+  @@index([competitionId])
+  @@index([roleId])
+}
+
+// Append-only record of who changed what. Written in the same transaction as
+// the change it describes (see src/audit/audit.service.ts).
+model AuditLog {
+  id             String   @id @default(cuid())
+  actorId        String?
+  // "user.roles.granted", "tournament.draw.published", …
+  action         String
+  entityType     String
+  entityId       String
+  // Where the change happened, so scoped admins can read their own logs.
+  organizationId String?
+  competitionId  String?
+  before         Json?
+  after          Json?
+  reason         String?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  competition  Competition?  @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([competitionId, createdAt])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
 // Geography & clubs & courts:  Country -> City -> Club -> Court
 // ---------------------------------------------------------------------------
 
 model Country {
-  id        String   @id @default(cuid())
+  id           String   @id @default(cuid())
   // ISO 3166-1 alpha-2, upper case ("SN").
-  code      String   @unique
-  name      String   @unique
+  code         String   @unique
+  name         String   @unique
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
   translations Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  cities City[]
+  cities        City[]
+  organizations Organization[]
 }
 
 model City {
-  id        String   @id @default(cuid())
-  name      String
-  countryId String
+  id           String   @id @default(cuid())
+  name         String
+  countryId    String
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
   translations Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   country Country @relation(fields: [countryId], references: [id], onDelete: Restrict)
   clubs   Club[]
@@ -301,32 +471,35 @@ model City {
 }
 
 model Club {
-  id            String   @id @default(cuid())
-  name          String
-  description   String?
-  logoUrl       String?
-  bannerUrl     String?
-  photos        String[] @default([])
-  address       String
-  cityId        String
-  latitude      Float?
-  longitude     Float?
-  phone         String?
-  email         String?
-  openingHours  Json?
-  amenities     String[] @default([])
+  id             String   @id @default(cuid())
+  // The Organization this club is (type = CLUB): status, contact, admins.
+  organizationId String   @unique
+  name           String
+  description    String?
+  logoUrl        String?
+  bannerUrl      String?
+  photos         String[] @default([])
+  address        String
+  cityId         String
+  latitude       Float?
+  longitude      Float?
+  phone          String?
+  email          String?
+  openingHours   Json?
+  amenities      String[] @default([])
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
-  translations Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  translations   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  city          City          @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  courts        Court[]
-  bookings      Booking[]
-  competitions  Competition[]
-  matches       Match[]
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  city         City          @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  courts       Court[]
+  bookings     Booking[]
+  competitions Competition[]
+  matches      Match[]
 
   // Lets Court reference (id, cityId) so a court's city can never differ from
   // its club's city — see Court.club.
@@ -348,10 +521,10 @@ model Court {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  club     Club      @relation(fields: [clubId, cityId], references: [id, cityId], onDelete: Cascade, onUpdate: Cascade)
-  city     City      @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  bookings Booking[]
-  matches  Match[]
+  club               Club               @relation(fields: [clubId, cityId], references: [id, cityId], onDelete: Cascade, onUpdate: Cascade)
+  city               City               @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  bookings           Booking[]
+  matches            Match[]
   competitionMatches CompetitionMatch[]
 
   @@index([clubId])
@@ -373,9 +546,9 @@ model Booking {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club  Club? @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  court  Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club   Club?   @relation(fields: [clubId], references: [id], onDelete: SetNull)
   clubId String?
 
   @@index([courtId])
@@ -387,7 +560,7 @@ model Booking {
 // ---------------------------------------------------------------------------
 
 model PartnerRequest {
-  id        String                @id @default(cuid())
+  id        String               @id @default(cuid())
   userId    String
   clubId    String?
   date      DateTime
@@ -396,26 +569,26 @@ model PartnerRequest {
   levelMin  PlayerLevel?
   levelMax  PlayerLevel?
   matchType MatchType
-  status    PartnerRequestStatus  @default(OPEN)
-  createdAt DateTime              @default(now())
-  updatedAt DateTime              @updatedAt
+  status    PartnerRequestStatus @default(OPEN)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
 
-  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   candidates PartnerMatchCandidate[]
 
   @@index([userId])
 }
 
 model PartnerMatchCandidate {
-  id               String           @id @default(cuid())
+  id               String          @id @default(cuid())
   requestId        String
   respondentUserId String
-  status           CandidateStatus  @default(PENDING)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  status           CandidateStatus @default(PENDING)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
-  request         PartnerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  respondentUser  User           @relation(fields: [respondentUserId], references: [id], onDelete: Cascade)
+  request        PartnerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  respondentUser User           @relation(fields: [respondentUserId], references: [id], onDelete: Cascade)
 
   @@unique([requestId, respondentUserId])
 }
@@ -425,43 +598,43 @@ model PartnerMatchCandidate {
 // ---------------------------------------------------------------------------
 
 model Match {
-  id        String            @id @default(cuid())
+  id            String            @id @default(cuid())
   // player1 is always the user who recorded the match.
-  player1Id String
+  player1Id     String
   // Registered opponent; null for a guest ("player2Name") or an unknown one.
-  player2Id String?
-  player2Name String?
-  clubId    String?
-  courtId   String?
-  location  String?
-  playedAt  DateTime
-  startedAt DateTime?
-  endedAt   DateTime?
+  player2Id     String?
+  player2Name   String?
+  clubId        String?
+  courtId       String?
+  location      String?
+  playedAt      DateTime
+  startedAt     DateTime?
+  endedAt       DateTime?
   // Wall-clock length vs. time the ball was actually in play (pauses and
   // side-change breaks excluded).
-  totalSeconds Int?
-  playSeconds  Int?
+  totalSeconds  Int?
+  playSeconds   Int?
   player1Points Int?
   player2Points Int?
-  bestOf    Int               @default(3)
-  noAd      Boolean           @default(false)
-  finalSet  FinalSetFormat    @default(TIEBREAK)
-  surface   Surface?
-  matchType RecordedMatchType
-  status    MatchStatus       @default(SCHEDULED)
-  winnerId  String?
-  winnerSide PlayerSide?
-  notes     String?
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  bestOf        Int               @default(3)
+  noAd          Boolean           @default(false)
+  finalSet      FinalSetFormat    @default(TIEBREAK)
+  surface       Surface?
+  matchType     RecordedMatchType
+  status        MatchStatus       @default(SCHEDULED)
+  winnerId      String?
+  winnerSide    PlayerSide?
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
 
-  player1 User  @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
-  player2 User? @relation("MatchPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
-  winner  User? @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
-  club    Club? @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  player1 User   @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
+  player2 User?  @relation("MatchPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
+  winner  User?  @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  club    Club?  @relation(fields: [clubId], references: [id], onDelete: SetNull)
   court   Court? @relation(fields: [courtId], references: [id], onDelete: SetNull)
 
-  sets                MatchSet[]
+  sets                   MatchSet[]
   linkedCompetitionMatch CompetitionMatch?
 
   @@index([player1Id, playedAt])
@@ -469,15 +642,15 @@ model Match {
 }
 
 model MatchSet {
-  id                    String   @id @default(cuid())
+  id                    String  @id @default(cuid())
   matchId               String
   setNumber             Int
   player1Games          Int
   player2Games          Int
-  isTiebreak            Boolean  @default(false)
+  isTiebreak            Boolean @default(false)
   // A match tiebreak (to 10) played instead of a deciding set: games are
   // recorded as 1-0 and the points live in the tiebreak fields.
-  isSuperTiebreak       Boolean  @default(false)
+  isSuperTiebreak       Boolean @default(false)
   tiebreakPlayer1Points Int?
   tiebreakPlayer2Points Int?
 
@@ -496,32 +669,34 @@ model MatchSet {
 // ---------------------------------------------------------------------------
 
 model Competition {
-  id        String            @id @default(cuid())
-  name      String
-  bannerUrl String?
-  clubId    String?
-  location  String?
-  startDate DateTime
-  endDate   DateTime
-  category  String?
-  surface   Surface?
-  format    CompetitionFormat
-  status    CompetitionStatus @default(UPCOMING)
-  description String?
+  id              String            @id @default(cuid())
+  name            String
+  bannerUrl       String?
+  clubId          String?
+  location        String?
+  startDate       DateTime
+  endDate         DateTime
+  category        String?
+  surface         Surface?
+  format          CompetitionFormat
+  status          CompetitionStatus @default(UPCOMING)
+  description     String?
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
-  translations Json?
+  translations    Json?
   // Highlighted first on the Home tab.
-  featured  Boolean           @default(false)
+  featured        Boolean           @default(false)
   maxParticipants Int?
-  entryFee  Decimal?          @db.Decimal(12, 2)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  entryFee        Decimal?          @db.Decimal(12, 2)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  club         Club?                     @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  club         Club?                    @relation(fields: [clubId], references: [id], onDelete: SetNull)
   participants CompetitionParticipant[]
   rounds       CompetitionRound[]
+  staff        UserRole[]
+  auditLogs    AuditLog[]
 }
 
 model CompetitionParticipant {
@@ -557,16 +732,16 @@ model CompetitionRound {
 // MatchSet rows) so the Match/MatchSet tables remain the single source of
 // truth for scores.
 model CompetitionMatch {
-  id             String                  @id @default(cuid())
+  id             String                 @id @default(cuid())
   roundId        String
   participant1Id String?
   participant2Id String?
   winnerId       String?
-  status         CompetitionMatchStatus  @default(SCHEDULED)
+  status         CompetitionMatchStatus @default(SCHEDULED)
   scheduledAt    DateTime?
   courtId        String?
   nextMatchId    String?
-  linkedMatchId  String?                 @unique
+  linkedMatchId  String?                @unique
 
   round        CompetitionRound        @relation(fields: [roundId], references: [id], onDelete: Cascade)
   participant1 CompetitionParticipant? @relation("CompetitionMatchParticipant1", fields: [participant1Id], references: [id], onDelete: SetNull)
@@ -577,7 +752,7 @@ model CompetitionMatch {
   // Self-relation for bracket progression: the winner of this match advances
   // into `nextMatch`. Many matches (e.g. both semifinals) can feed into the
   // same `nextMatch`, so this is many-to-one, not one-to-one.
-  nextMatch      CompetitionMatch?  @relation("BracketProgression", fields: [nextMatchId], references: [id], onDelete: SetNull)
+  nextMatch       CompetitionMatch?  @relation("BracketProgression", fields: [nextMatchId], references: [id], onDelete: SetNull)
   previousMatches CompetitionMatch[] @relation("BracketProgression")
 
   linkedMatch Match? @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
@@ -594,20 +769,20 @@ model CompetitionMatch {
 // full-screen frames; `route` is an in-app path opened by the call-to-action.
 // "Seen" state lives on the device, not here.
 model Story {
-  id          String    @id @default(cuid())
-  title       String
-  kind        StoryKind
-  coverUrl    String
-  slides      Json
+  id           String    @id @default(cuid())
+  title        String
+  kind         StoryKind
+  coverUrl     String
+  slides       Json
   // `slides` translate per index: { "fr": { "title": "...", "slides": [{ "headline": "..." }] } }
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
   translations Json?
-  publishedAt DateTime  @default(now())
-  expiresAt   DateTime
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  publishedAt  DateTime  @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([expiresAt])
 }
@@ -632,22 +807,22 @@ model Favorite {
 }
 
 model Notification {
-  id        String           @id @default(cuid())
-  userId    String
-  type      NotificationType
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType
   // Default-language text, kept as the fallback; see messageKey.
-  title     String
-  body      String
+  title      String
+  body       String
   // Translation key ("bookingConfirmed") and the facts to fill it with. When
   // set, the API words the notification in the reader's language instead of
   // returning title/body.
   messageKey String?
-  params    Json?
+  params     Json?
   // `{ route?: string }` — the in-app path the notification opens.
-  data      Json?
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  data       Json?
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -661,19 +836,19 @@ model Notification {
 // Reference data for the marketplace: one row per category the app can filter
 // and sell in. Labels, icons and order are owned here, not in the client.
 model ProductCategory {
-  id        String   @id @default(cuid())
+  id           String   @id @default(cuid())
   // Stable machine key the API sends and accepts ("RACKET").
-  code      String   @unique
-  label     String
+  code         String   @unique
+  label        String
   // Icon slug the app maps to a glyph ("racket").
-  icon      String
-  sortOrder Int      @default(0)
+  icon         String
+  sortOrder    Int      @default(0)
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
   translations Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   products Product[]
 }

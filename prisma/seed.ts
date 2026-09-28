@@ -29,6 +29,7 @@ import {
   STORY_TRANSLATIONS,
 } from './seed-translations.js';
 import { CLUB_BANNERS } from './seed-banners.js';
+import { seedBackOffice } from './seed-backoffice.js';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -426,9 +427,20 @@ async function main() {
     const existing = await prisma.club.findFirst({
       where: { name: clubData.name },
     });
+    // Every club is an Organization (type CLUB) carrying its admin grants.
+    const orgData = {
+      name: clubData.name,
+      description: clubData.description,
+      address: clubData.address,
+    };
+    const organization = existing
+      ? await prisma.organization.update({ where: { id: existing.organizationId }, data: orgData })
+      : await prisma.organization.create({
+          data: { ...orgData, type: 'CLUB', slug: `club-${slug}` },
+        });
     const club = existing
       ? await prisma.club.update({ where: { id: existing.id }, data: clubData })
-      : await prisma.club.create({ data: clubData });
+      : await prisma.club.create({ data: { ...clubData, organizationId: organization.id } });
 
     // Seeded courts are keyed by (clubId, name): delete-then-recreate keeps
     // this idempotent without needing a unique constraint on the schema.
@@ -449,6 +461,7 @@ async function main() {
   await seedMarketplace();
   await seedMatches();
   await seedHome();
+  await seedBackOffice(prisma);
 }
 
 // ---------------------------------------------------------------------------
@@ -1015,6 +1028,8 @@ const MATCH_SEEDS: MatchSeed[] = [
 
 async function seedMatches() {
   const users = await prisma.user.findMany({
+    // Back-office staff accounts (any grant) don't get made-up match history.
+    where: { roles: { none: {} } },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
