@@ -39,7 +39,7 @@ describe('ClubsService location', () => {
   it('returns a club with its courts, each linked to the city', async () => {
     const prisma = {
       club: {
-        findUnique: vi.fn().mockResolvedValue({
+        findFirst: vi.fn().mockResolvedValue({
           id: 'c1',
           name: 'ASAC',
           cityId: 'city-dakar',
@@ -94,14 +94,14 @@ describe('ClubsService location', () => {
   });
 
   it('404s for an unknown club', async () => {
-    const prisma = { club: { findUnique: vi.fn().mockResolvedValue(null) } };
+    const prisma = { club: { findFirst: vi.fn().mockResolvedValue(null) } };
     await expect(
       new ClubsService(prisma as never).findOneWithCourts('nope'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('words the 404 in the request language', async () => {
-    const prisma = { club: { findUnique: vi.fn().mockResolvedValue(null) } };
+    const prisma = { club: { findFirst: vi.fn().mockResolvedValue(null) } };
     const service = new ClubsService(prisma as never);
     await expect(
       runWithLang('fr', () => service.findOneWithCourts('nope')),

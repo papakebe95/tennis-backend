@@ -10,10 +10,24 @@ import { PurchaseRequestsService } from '../marketplace/purchase-requests.servic
 const notifications = { notify: vi.fn().mockResolvedValue(undefined) };
 beforeEach(() => notifications.notify.mockClear());
 
-const inHours = (h: number) => new Date(Date.now() + h * 3_600_000);
+// Inside the default 08:00-22:00 opening hours, whenever the tests run.
+const tomorrowAt = (hourUtc: number) => {
+  const d = new Date(Date.now() + 24 * 3_600_000);
+  d.setUTCHours(hourUtc, 0, 0, 0);
+  return d;
+};
 
 describe('bookings', () => {
-  const court = { id: 'court1', clubId: 'club1', pricePerHour: 20 };
+  const court = {
+    id: 'court1',
+    clubId: 'club1',
+    pricePerHour: 20,
+    status: 'AVAILABLE',
+    archivedAt: null,
+    availability: [],
+    // No club hours: the 08:00-22:00 default applies.
+    club: { openingHours: null, organization: { status: 'ACTIVE' } },
+  };
   const booked = (
     start: Date,
     status: BookingStatus = BookingStatus.CONFIRMED,
@@ -27,7 +41,7 @@ describe('bookings', () => {
   });
 
   it('confirms a new booking to the player who made it', async () => {
-    const start = inHours(24);
+    const start = tomorrowAt(10);
     const prisma = {
       court: { findUnique: vi.fn().mockResolvedValue(court) },
       booking: {
@@ -51,7 +65,7 @@ describe('bookings', () => {
   });
 
   it('does not notify when the court is already taken', async () => {
-    const start = inHours(24);
+    const start = tomorrowAt(10);
     const prisma = {
       court: { findUnique: vi.fn().mockResolvedValue(court) },
       booking: { findFirst: vi.fn().mockResolvedValue({ id: 'other' }) },
@@ -69,7 +83,7 @@ describe('bookings', () => {
   });
 
   it('announces a cancellation once, not on a repeat cancel', async () => {
-    const start = inHours(24);
+    const start = tomorrowAt(10);
     const prisma = {
       booking: {
         findUnique: vi.fn().mockResolvedValue(booked(start)),

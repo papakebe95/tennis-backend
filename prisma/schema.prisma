@@ -37,6 +37,20 @@ enum RoleScope {
   COMPETITION
 }
 
+enum AffiliationStatus {
+  // Requested by the club, awaiting the federation.
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ENDED
+}
+
+enum CourtStatus {
+  AVAILABLE
+  MAINTENANCE
+  DISABLED
+}
+
 enum AccessRequestStatus {
   PENDING
   // The reviewer asked the applicant for more information.
@@ -339,11 +353,15 @@ model Organization {
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  country        Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  country        Country?                  @relation(fields: [countryId], references: [id], onDelete: SetNull)
   club           Club?
   members        UserRole[]
   accessRequests AccessRequest[]
   auditLogs      AuditLog[]
+  // Affiliations where this organization is the member (club) or the
+  // parent (federation).
+  memberships    OrganizationAffiliation[] @relation("AffiliationMember")
+  affiliations   OrganizationAffiliation[] @relation("AffiliationParent")
 
   @@index([type, status])
 }
@@ -560,27 +578,72 @@ model Club {
 }
 
 model Court {
-  id           String   @id @default(cuid())
+  id           String      @id @default(cuid())
   clubId       String
   // Always the club's city (enforced by the composite foreign key below);
   // kept on the court so courts can be queried by city directly.
   cityId       String
   name         String
   surface      Surface
-  indoor       Boolean  @default(false)
-  pricePerHour Decimal? @db.Decimal(10, 2)
-  photos       String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  indoor       Boolean     @default(false)
+  // Floodlights: playable after dark.
+  lighting     Boolean     @default(false)
+  // Number painted on the court / display order ("Court 3").
+  number       Int?
+  status       CourtStatus @default(AVAILABLE)
+  // Archived courts disappear from the apps but keep their booking history.
+  archivedAt   DateTime?
+  pricePerHour Decimal?    @db.Decimal(10, 2)
+  photos       String[]    @default([])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
-  club               Club               @relation(fields: [clubId, cityId], references: [id, cityId], onDelete: Cascade, onUpdate: Cascade)
-  city               City               @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  club               Club                @relation(fields: [clubId, cityId], references: [id, cityId], onDelete: Cascade, onUpdate: Cascade)
+  city               City                @relation(fields: [cityId], references: [id], onDelete: Restrict)
   bookings           Booking[]
   matches            Match[]
   competitionMatches CompetitionMatch[]
+  availability       CourtAvailability[]
 
   @@index([clubId])
   @@index([cityId])
+}
+
+// Weekly opening windows of one court (weekday 0 = Monday … 6 = Sunday,
+// "HH:mm", UTC like the rest of the booking system). A court without rows
+// follows its club's openingHours.
+model CourtAvailability {
+  id       String @id @default(cuid())
+  courtId  String
+  weekday  Int
+  opensAt  String
+  closesAt String
+
+  court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@index([courtId, weekday])
+}
+
+// A club's membership of a federation. Requested by the club, validated,
+// suspended or ended by the federation. History is kept (ENDED rows).
+model OrganizationAffiliation {
+  id            String            @id @default(cuid())
+  memberOrgId   String
+  parentOrgId   String
+  status        AffiliationStatus @default(PENDING)
+  requestedAt   DateTime          @default(now())
+  requestedById String?
+  validatedAt   DateTime?
+  validatedById String?
+  endedAt       DateTime?
+  reason        String?
+  updatedAt     DateTime          @updatedAt
+
+  member Organization @relation("AffiliationMember", fields: [memberOrgId], references: [id], onDelete: Cascade)
+  parent Organization @relation("AffiliationParent", fields: [parentOrgId], references: [id], onDelete: Cascade)
+
+  @@unique([memberOrgId, parentOrgId])
+  @@index([parentOrgId, status])
 }
 
 // Overlap-prevention (a court cannot be double-booked for intersecting time
@@ -598,7 +661,7 @@ model Booking {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  court  Court   @relation(fields: [courtId], references: [id], onDelete: Cascade)
+  court  Court   @relation(fields: [courtId], references: [id], onDelete: Restrict)
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   club   Club?   @relation(fields: [clubId], references: [id], onDelete: SetNull)
   clubId String?

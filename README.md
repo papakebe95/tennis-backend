@@ -250,6 +250,25 @@ Rules enforced server-side:
 - The platform always keeps one active Super Admin.
 - Resetting a password returns a one-time temporary password. The account must change it before doing anything else (`403 PASSWORD_CHANGE_REQUIRED`).
 
+### Organizations, clubs and courts
+
+| Area | Endpoints | Permission |
+|---|---|---|
+| Organizations (platform) | `GET/POST /admin/organizations`, `GET /admin/organizations/:id`, `PATCH /admin/organizations/:id/status` | `organization.view`, `organization.create`, `organization.manage` |
+| Federation space | `GET/PATCH /admin/federations/:id`, `GET/POST /admin/federations/:id/clubs`, `POST /admin/federations/:id/affiliations/:affiliationId/approve \| suspend \| end` | `federation.view`, `federation.update`, `federation.clubs.view`, `federation.clubs.validate` (on that federation) |
+| Club space | `GET/PATCH /admin/clubs/:id`, `POST /admin/clubs/:id/affiliations`, `GET/POST /admin/clubs/:id/courts` | `club.view`, `club.update`, `court.view`, `court.manage` (on that club) |
+| Courts | `PATCH /admin/courts/:courtId`, `PATCH …/status`, `POST …/archive \| restore`, `PUT …/availability` | `court.manage` (on the court's club) |
+
+- **Suspended or archived organizations** disappear from the player API. Their administrators' grants stop working until the organization is reactivated.
+- **Affiliations:** a club asks to join (`PENDING`); the federation approves, suspends or ends it. Every change is recorded in both organizations' audit logs.
+- **Opening hours** are stored as `Club.openingHours = { mon: ["07:00-12:00", "14:00-22:00"], …, sun: [] }` (UTC).
+  - A court can override them with `CourtAvailability` rows.
+  - Without either, a court is open 08:00–22:00.
+  - Player availability (`GET /courts/:id/availability`) and bookings follow these hours.
+  - Courts under `MAINTENANCE`, `DISABLED` or archived can't be booked.
+- **Courts are archived, never deleted.** Bookings reference them with `ON DELETE RESTRICT`, so history is kept.
+- **Club descriptions are edited per language:** a French request (`lang: fr`) updates the French translation and leaves the English column unchanged.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

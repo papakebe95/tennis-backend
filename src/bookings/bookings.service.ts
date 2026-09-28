@@ -4,7 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, CourtStatus, OrganizationStatus } from '@prisma/client';
+import { fitsWindows, parseOpeningHours, windowsFor } from '../clubs/opening-hours.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
   bookingCancelled,
@@ -43,9 +44,20 @@ export class BookingsService {
 
     const court = await this.prisma.court.findUnique({
       where: { id: dto.courtId },
+      include: {
+        availability: true,
+        club: { select: { openingHours: true, organization: { select: { status: true } } } },
+      },
     });
-    if (!court) {
+    if (!court || court.archivedAt || court.club.organization.status !== OrganizationStatus.ACTIVE) {
       throw new NotFoundException(t('errors.courts.notFound'));
+    }
+    if (court.status !== CourtStatus.AVAILABLE) {
+      throw new ConflictException(t('errors.courts.unavailable'));
+    }
+    const windows = windowsFor(startTime, court.availability, parseOpeningHours(court.club.openingHours));
+    if (!fitsWindows(startTime, endTime, windows)) {
+      throw new BadRequestException(t('errors.bookings.outsideHours'));
     }
 
     const overlapping = await this.prisma.booking.findFirst({

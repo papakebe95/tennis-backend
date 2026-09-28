@@ -17,7 +17,7 @@ import { t } from '../i18n/i18n.js';
 
 // Small, fixed allowlist of upload contexts - anything else is rejected
 // rather than letting the client write into an arbitrary folder name.
-const ALLOWED_UPLOAD_FOLDERS = ['clubs', 'courts', 'avatars', 'products'] as const;
+const ALLOWED_UPLOAD_FOLDERS = ['clubs', 'courts', 'avatars', 'products', 'organizations'] as const;
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard)

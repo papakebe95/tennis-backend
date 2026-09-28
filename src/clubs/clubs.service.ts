@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { OrganizationStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { amenityLabel, t } from '../i18n/i18n.js';
 import { localize } from '../i18n/localize.js';
@@ -43,6 +44,8 @@ export class ClubsService {
 
   async findAll() {
     const clubs = await this.prisma.club.findMany({
+      // Suspended or archived clubs are hidden from players.
+      where: { organization: { status: OrganizationStatus.ACTIVE } },
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -56,7 +59,7 @@ export class ClubsService {
         longitude: true,
         amenities: true,
         translations: true,
-        _count: { select: { courts: true } },
+        _count: { select: { courts: { where: { archivedAt: null } } } },
       },
     });
 
@@ -67,11 +70,13 @@ export class ClubsService {
   }
 
   async findOneWithCourts(id: string) {
-    const club = await this.prisma.club.findUnique({
-      where: { id },
+    const club = await this.prisma.club.findFirst({
+      where: { id, organization: { status: OrganizationStatus.ACTIVE } },
       include: {
         city: { select: citySelect },
         courts: {
+          where: { archivedAt: null },
+          orderBy: [{ number: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
           select: {
             id: true,
             cityId: true,
@@ -80,6 +85,9 @@ export class ClubsService {
             indoor: true,
             pricePerHour: true,
             photos: true,
+            number: true,
+            lighting: true,
+            status: true,
           },
         },
       },

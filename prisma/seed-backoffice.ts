@@ -141,6 +141,40 @@ export async function seedBackOffice(prisma: PrismaClient) {
     }
   }
 
+  // Federation affiliations: two clubs affiliated, one waiting for validation.
+  const clubOrgs = clubs.map((c) => c.organizationId);
+  const affiliations: [string | undefined, 'ACTIVE' | 'PENDING'][] = [
+    [clubOrgs[0], 'ACTIVE'],
+    [clubOrgs[1], 'ACTIVE'],
+    [clubOrgs[2], 'PENDING'],
+  ];
+  for (const [memberOrgId, status] of affiliations) {
+    if (!memberOrgId) continue;
+    const data = { status, validatedAt: status === 'ACTIVE' ? new Date() : null, validatedById: status === 'ACTIVE' ? superAdminId : null, endedAt: null };
+    await prisma.organizationAffiliation.upsert({
+      where: { memberOrgId_parentOrgId: { memberOrgId, parentOrgId: federation.id } },
+      update: data,
+      create: { ...data, memberOrgId, parentOrgId: federation.id, requestedById: superAdminId },
+    });
+  }
+
+  // Courts in every state: one under maintenance, one disabled, and a
+  // floodlit court open evenings only (its own availability overrides the
+  // club's hours).
+  const courtsOf = (orgId?: string) =>
+    orgId ? prisma.court.findMany({ where: { club: { organizationId: orgId } }, orderBy: { number: 'asc' } }) : Promise.resolve([]);
+  const [first, second, third] = await Promise.all([courtsOf(clubOrgs[0]), courtsOf(clubOrgs[1]), courtsOf(clubOrgs[2])]);
+  await prisma.court.updateMany({ where: { id: { in: [...first, ...second, ...third].map((c) => c.id) } }, data: { status: 'AVAILABLE', archivedAt: null } });
+  if (second[0]) await prisma.court.update({ where: { id: second[0].id }, data: { status: 'MAINTENANCE' } });
+  if (third[1]) await prisma.court.update({ where: { id: third[1].id }, data: { status: 'DISABLED' } });
+  if (first[0]) {
+    await prisma.court.update({ where: { id: first[0].id }, data: { lighting: true } });
+    await prisma.courtAvailability.deleteMany({ where: { courtId: first[0].id } });
+    await prisma.courtAvailability.createMany({
+      data: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ courtId: first[0].id, weekday, opensAt: '17:00', closesAt: '23:00' })),
+    });
+  }
+
   // Access requests, so the review screens have something to show. Rebuilt on
   // every run for the seeded applicants.
   const firstCity = await prisma.city.findFirst({ orderBy: { name: 'asc' } });

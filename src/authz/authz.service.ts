@@ -5,7 +5,7 @@ import {
   NotFoundException,
   OnApplicationBootstrap,
 } from '@nestjs/common';
-import { RoleScope } from '@prisma/client';
+import { OrganizationStatus, RoleScope } from '@prisma/client';
 import { t } from '../i18n/i18n.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { syncAuthorizationCatalog } from './catalog-sync.js';
@@ -31,7 +31,7 @@ export class AuthzService implements OnApplicationBootstrap {
   /** The user's active grants with their permissions flattened. */
   async loadGrants(userId: string): Promise<Grant[]> {
     const rows = await this.prisma.userRole.findMany({
-      where: { userId, revokedAt: null },
+      where: activeGrantWhere(userId),
       select: {
         organizationId: true,
         competitionId: true,
@@ -119,7 +119,7 @@ export class AuthzService implements OnApplicationBootstrap {
         },
       }),
       this.prisma.userRole.findMany({
-        where: { userId, revokedAt: null },
+        where: activeGrantWhere(userId),
         orderBy: { grantedAt: 'asc' },
         select: {
           id: true,
@@ -168,6 +168,16 @@ export class AuthzService implements OnApplicationBootstrap {
     if (!holds(grants, permission, chain)) throw forbidden();
   }
 }
+
+/**
+ * Grants in effect: not revoked, and not on a suspended or archived
+ * organization (suspending a club freezes its administrators).
+ */
+const activeGrantWhere = (userId: string) => ({
+  userId,
+  revokedAt: null,
+  OR: [{ organizationId: null }, { organization: { status: OrganizationStatus.ACTIVE } }],
+});
 
 export const forbidden = () =>
   new ForbiddenException({ message: t('errors.http.forbidden'), code: 'FORBIDDEN' });

@@ -124,9 +124,16 @@ interface ClubSeed {
   courts: CourtSeed[];
 }
 
+// Canonical weekly hours (see src/clubs/opening-hours.ts): one "HH:mm-HH:mm"
+// window per day, null when closed.
 const DEFAULT_HOURS = {
-  'mon-fri': '07:00-22:00',
-  'sat-sun': '08:00-20:00',
+  mon: '07:00-22:00',
+  tue: '07:00-22:00',
+  wed: '07:00-22:00',
+  thu: '07:00-22:00',
+  fri: '07:00-22:00',
+  sat: '08:00-20:00',
+  sun: '08:00-20:00',
 };
 
 // Curated, freely-licensed real tennis photography (Unsplash License: free
@@ -442,18 +449,21 @@ async function main() {
       ? await prisma.club.update({ where: { id: existing.id }, data: clubData })
       : await prisma.club.create({ data: { ...clubData, organizationId: organization.id } });
 
-    // Seeded courts are keyed by (clubId, name): delete-then-recreate keeps
-    // this idempotent without needing a unique constraint on the schema.
-    await prisma.court.deleteMany({ where: { clubId: club.id } });
-    await prisma.court.createMany({
-      data: courts.map((court) => ({
+    // Seeded courts are keyed by (clubId, name) and updated in place: courts
+    // can't be deleted once they have bookings (history is kept).
+    for (const [index, court] of courts.entries()) {
+      const data = {
         ...court,
+        number: index + 1,
         clubId: club.id,
         // A court is in its club's city (the schema enforces it).
         cityId,
         photos: courtPhotoUrls(slug, court.name, 3),
-      })),
-    });
+      };
+      const row = await prisma.court.findFirst({ where: { clubId: club.id, name: court.name } });
+      if (row) await prisma.court.update({ where: { id: row.id }, data });
+      else await prisma.court.create({ data });
+    }
 
     console.log(`Seeded club "${club.name}" with ${courts.length} courts`);
   }

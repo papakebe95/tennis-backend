@@ -35,6 +35,8 @@ export const PERMISSIONS = {
 
   // Organizations
   'organization.create': { module: 'organization', description: 'Create federations, clubs and communities', scopes: [GLOBAL] },
+  'organization.view': { module: 'organization', description: 'View every organization', scopes: [GLOBAL] },
+  'organization.manage': { module: 'organization', description: 'Suspend, reactivate or archive organizations', scopes: [GLOBAL] },
   'federation.view': { module: 'organization', description: 'View a federation profile', scopes: [GLOBAL, ORGANIZATION] },
   'federation.update': { module: 'organization', description: 'Edit a federation profile', scopes: [GLOBAL, ORGANIZATION] },
   'federation.clubs.view': { module: 'organization', description: 'View affiliated clubs', scopes: [GLOBAL, ORGANIZATION] },

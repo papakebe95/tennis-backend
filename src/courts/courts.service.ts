@@ -1,13 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, CourtStatus, OrganizationStatus } from '@prisma/client';
+import { hourlySlots, parseOpeningHours, windowsFor } from '../clubs/opening-hours.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { t } from '../i18n/i18n.js';
-
-// Business hours are fixed for now (no per-club overrides yet): 08:00-22:00
-// in 1-hour slots, treated as UTC. This is a known simplification - a real
-// implementation would resolve this against the club's actual timezone.
-const OPENING_HOUR_UTC = 8;
-const CLOSING_HOUR_UTC = 22;
 
 export interface AvailabilitySlotBookedBy {
   firstname: string;
@@ -26,6 +21,8 @@ export interface AvailabilitySlot {
 export interface CourtAvailability {
   courtId: string;
   date: string;
+  /** False when the court can't be booked at all (maintenance, closed…). */
+  bookable: boolean;
   slots: AvailabilitySlot[];
 }
 
@@ -44,19 +41,30 @@ export class CourtsService {
   ): Promise<CourtAvailability> {
     const court = await this.prisma.court.findUnique({
       where: { id: courtId },
+      include: {
+        availability: true,
+        club: { select: { openingHours: true, organization: { select: { status: true } } } },
+      },
     });
-    if (!court) {
+    if (!court || court.archivedAt || court.club.organization.status !== OrganizationStatus.ACTIVE) {
       throw new NotFoundException(t('errors.courts.notFound'));
     }
 
     // `date` has already passed @IsDateString() validation; take just the
-    // calendar day and anchor slot generation at UTC midnight.
+    // calendar day. Slots come from the court's own windows, else its club's
+    // opening hours (see clubs/opening-hours.ts).
     const day = date.slice(0, 10);
     const dayStart = new Date(`${day}T00:00:00.000Z`);
-    const windowStart = new Date(`${day}T00:00:00.000Z`);
-    windowStart.setUTCHours(OPENING_HOUR_UTC, 0, 0, 0);
-    const windowEnd = new Date(`${day}T00:00:00.000Z`);
-    windowEnd.setUTCHours(CLOSING_HOUR_UTC, 0, 0, 0);
+    if (court.status !== CourtStatus.AVAILABLE) {
+      return { courtId, date: day, bookable: false, slots: [] };
+    }
+    const hourSlots = hourlySlots(
+      dayStart,
+      windowsFor(dayStart, court.availability, parseOpeningHours(court.club.openingHours)),
+    );
+    if (hourSlots.length === 0) return { courtId, date: day, bookable: true, slots: [] };
+    const windowStart = hourSlots[0].start;
+    const windowEnd = hourSlots[hourSlots.length - 1].end;
 
     const bookings = await this.prisma.booking.findMany({
       where: {
@@ -76,16 +84,7 @@ export class CourtsService {
     });
 
     const slots: AvailabilitySlot[] = [];
-    for (
-      let hour = OPENING_HOUR_UTC;
-      hour < CLOSING_HOUR_UTC;
-      hour += 1
-    ) {
-      const start = new Date(dayStart);
-      start.setUTCHours(hour, 0, 0, 0);
-      const end = new Date(dayStart);
-      end.setUTCHours(hour + 1, 0, 0, 0);
-
+    for (const { start, end } of hourSlots) {
       const occupyingBooking = bookings.find(
         (booking) => booking.startTime < end && booking.endTime > start,
       );
@@ -110,6 +109,6 @@ export class CourtsService {
       slots.push(slot);
     }
 
-    return { courtId, date: day, slots };
+    return { courtId, date: day, bookable: true, slots };
   }
 }
