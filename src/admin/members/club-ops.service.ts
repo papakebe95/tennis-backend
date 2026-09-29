@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { AffiliationStatus, BookingStatus, CourtStatus, MemberStatus, OrganizationType, PaymentStatus, Prisma } from '@prisma/client';
 import { AuditService } from '../../audit/audit.service.js';
 import { pageArgs, searchText, toPage } from '../../common/pagination.js';
-import { effectiveStatus } from '../../competitions/competitions.service.js';
+import { publicStatus } from '../tournaments/tournament-lifecycle.js';
 import { t } from '../../i18n/i18n.js';
 import { bookingCancelled } from '../../notifications/notification-messages.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
@@ -140,6 +140,7 @@ export class ClubOpsService {
       revenueByMonth,
       newMembers,
       competitions,
+      pendingRegistrations,
       recentActivity,
       todayList,
     ] = await Promise.all([
@@ -168,7 +169,17 @@ export class ClubOpsService {
       this.prisma.$queryRaw<{ week: Date; count: number }[]>`
         SELECT date_trunc('week', "joinedAt") AS week, count(*)::int AS count
         FROM "ClubMember" WHERE "clubId" = ${clubId} AND "joinedAt" >= ${new Date(now.getTime() - 84 * DAY_MS)} GROUP BY 1`,
-      this.prisma.competition.findMany({ where: { clubId }, select: { id: true, name: true, status: true, startDate: true, endDate: true } }),
+      this.prisma.competition.findMany({ where: { OR: [{ clubId }, { hostOrganization: { club: { id: clubId } } }] }, select: { id: true, name: true, status: true, startDate: true, endDate: true } }),
+      // Entries waiting for a decision in tournaments the club hosts.
+      this.prisma.competitionParticipant.count({
+        where: {
+          status: 'PENDING',
+          competition: {
+            hostOrganization: { club: { id: clubId } },
+            status: { in: ['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED'] },
+          },
+        },
+      }),
       this.prisma.auditLog.findMany({
         where: { organizationId: club.organizationId },
         orderBy: { createdAt: 'desc' },
@@ -190,7 +201,7 @@ export class ClubOpsService {
     ]);
 
     const courtCount = (status: CourtStatus) => courts.find((c) => c.status === status)?._count._all ?? 0;
-    const tournaments = competitions.map((c) => ({ ...c, status: effectiveStatus(c, now) }));
+    const tournaments = competitions.map((c) => ({ ...c, status: publicStatus(c.status) ?? 'UPCOMING' }));
     const months = Array.from({ length: 6 }, (_, i) => monthStart(now, i - 5));
     const byMonth = new Map(revenueByMonth.map((r) => [monthStart(new Date(r.month)).getTime(), Number(r.amount)]));
     const outstanding = Number(unpaid._sum.priceDue ?? 0) - Number(unpaid._sum.amountPaid ?? 0);
@@ -202,6 +213,7 @@ export class ClubOpsService {
         { key: 'expiringSoon', count: expiringSoon, route: 'members?sort=expiresAt:asc' },
         { key: 'expiredMemberships', count: expired, route: 'members?paymentStatus=EXPIRED' },
         { key: 'courtsUnavailable', count: courtCount(CourtStatus.MAINTENANCE) + courtCount(CourtStatus.DISABLED), route: 'courts' },
+        { key: 'pendingRegistrations', count: pendingRegistrations, route: '/tournaments' },
       ],
       members: { total: members, active: activeMembers, expired, graceDays: GRACE_DAYS },
       payments: { unpaidCount: unpaid._count._all, outstanding, revenueThisMonth: Number(revenueMonth._sum.amount ?? 0), currency: 'XOF' },
@@ -269,7 +281,16 @@ export class ClubOpsService {
           msisdn: true,
           status: true,
           createdAt: true,
-          playerProfile: { select: { level: true, ntrpRating: true, avatarUrl: true } },
+          playerProfile: {
+            select: {
+              level: true,
+              ntrpRating: true,
+              avatarUrl: true,
+              gender: true,
+              birthDate: true,
+              classification: { select: { id: true, code: true } },
+            },
+          },
           clubMemberships: {
             where: memberWhere,
             select: {

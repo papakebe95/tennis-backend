@@ -3,6 +3,7 @@ import { MemberStatus, PaymentPurpose, PaymentStatus, Prisma } from '@prisma/cli
 import { AuditService } from '../../audit/audit.service.js';
 import { orderBy, pageArgs, searchText, toPage } from '../../common/pagination.js';
 import { csvDocument } from '../../common/csv.js';
+import { maskPhone, personSearchWhere } from '../../common/person-search.js';
 import { t } from '../../i18n/i18n.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
@@ -68,7 +69,6 @@ const withPaymentStatus = <T extends { currentMembership: MemberRow['currentMemb
 });
 
 /** "07 12 34 56 78" → "•• •• •• 56 78": enough to recognise, not to harvest. */
-const maskPhone = (msisdn: string) => `${'•'.repeat(Math.max(0, msisdn.length - 4))}${msisdn.slice(-4)}`;
 
 @Injectable()
 export class MembersService {
@@ -152,24 +152,8 @@ export class MembersService {
    * platform's players. Phones come back masked.
    */
   async candidates(clubId: string, q: string) {
-    const digits = q.replace(/\D/g, '');
     const rows = await this.prisma.user.findMany({
-      where: {
-        OR: [
-          ...(digits.length >= 8 ? [{ msisdn: { endsWith: digits.slice(-9) } }] : []),
-          {
-            AND: q
-              .split(/\s+/)
-              .filter(Boolean)
-              .map((part) => ({
-                OR: [
-                  { firstname: { contains: part, mode: 'insensitive' as const } },
-                  { lastname: { contains: part, mode: 'insensitive' as const } },
-                ],
-              })),
-          },
-        ],
-      },
+      where: personSearchWhere(q),
       take: 10,
       orderBy: { lastname: 'asc' },
       select: {

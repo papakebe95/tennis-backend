@@ -292,6 +292,32 @@ Rules enforced server-side:
 - **Payment methods** live in the `PaymentMethod` table: cash, Wave, Orange Money, Free Money, card, bank transfer. Online providers plug in later through `provider`.
 - **Adding a member** needs an existing player account. Club staff search by phone or name and see masked phone numbers.
 
+### Tournaments, tables and entries
+
+| Area | Endpoints | Permission (on the tournament or its host) |
+|---|---|---|
+| Tournaments | `GET /admin/tournaments` (scoped), `GET /admin/tournaments/host-options`, `POST /admin/tournaments`, `GET/PATCH/DELETE /admin/tournaments/:id` | `tournament.view`, `tournament.create`, `tournament.update`, `tournament.delete` |
+| Lifecycle | `POST /admin/tournaments/:id/transitions {to, reason}`, `POST …/interrupt`, `POST …/resume` | `tournament.lifecycle.manage`, `tournament.interrupt` |
+| Tables | `POST /admin/tournaments/:id/events`, `PATCH/DELETE /admin/events/:eventId` | `tournament.update` |
+| Entries | `GET /admin/events/:eventId/registrations`, `GET …/entry-candidates?q=`, `GET …/qualifier-sources`, `POST …/registrations`, `POST /admin/registrations/:id/{approve,reject,waitlist,withdraw}`, `PATCH …/seed` | `registration.view`, `registration.manage` |
+| Team | `GET /admin/tournaments/:id/staff`, `GET …/staff-candidates?q=`, `POST …/staff`, `DELETE …/staff/:grantId` | `tournament.view`, `tournament.staff.manage` |
+| Sport profile | `GET /admin/classifications`, `PATCH /admin/players/:userId/sport-profile` | signed in, `player.sport_profile.manage` |
+
+- **Lifecycle** (`src/admin/tournaments/tournament-lifecycle.ts`):
+  - `DRAFT → REGISTRATION_OPEN ⇄ REGISTRATION_CLOSED → IN_PROGRESS → COMPLETED`; `CANCELLED` from any open state, reason required.
+  - Opening registration needs at least one table and consistent dates. Starting needs every table's draw published (Phase 6). Completing needs every match finished.
+  - `INTERRUPTED` is entered and left with interrupt/resume, which keep a history and can notify entrants.
+- **Player app compatibility:** drafts and private tournaments are hidden. `status` stays `UPCOMING | ONGOING | COMPLETED`, derived from the lifecycle, with `cancelled` / `interrupted` flags. Registering from the app puts the player in the first singles table they are eligible for, as a `PENDING` entry.
+- **Tables (events):** each has its own eligibility (category, age, classification window), places, entry fee and match rules.
+  - Successive tables: a table can send `qualifierCount` players into a later table (`qualifiesIntoEventId`). Loops and backward links are refused (`TABLES_INVALID`).
+  - Creating a tournament can create its tables at once; tables refer to each other through client `ref`s.
+- **Eligibility** is checked by the API against the player's sport profile (classification, gender, birth date).
+  - Classification uses the national scale (`Classification`, seeded by the migration); unclassified players count as NC. Age is the age reached during the tournament's year.
+  - Qualifiers, lucky losers and wildcards may be below a table's floor.
+  - Accepting an ineligible entry needs an override reason, which is stored with the entry and in the audit log.
+  - Capacity and seeds are checked under a row lock on the table.
+- **Hosting:** creating a tournament for an organization needs both `tournament.create` and `tournament.update` there. An independent organizer (global `tournament.create` only) can't put a club's name on a tournament. The creator gets `COMPETITION_ORGANIZER` on it when they couldn't run it otherwise.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

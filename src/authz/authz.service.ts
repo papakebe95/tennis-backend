@@ -21,7 +21,9 @@ export type ResourceType =
   | 'member'
   | 'membershipPlan'
   | 'payment'
-  | 'booking';
+  | 'booking'
+  | 'event'
+  | 'registration';
 
 const org = (id: string): Scope => ({ type: RoleScope.ORGANIZATION, id });
 
@@ -113,19 +115,30 @@ export class AuthzService implements OnApplicationBootstrap {
         if (!row) throw notFound();
         return [org(row.court.club.organizationId), GLOBAL_SCOPE];
       }
-      case 'competition': {
-        const row = await this.prisma.competition.findUnique({
-          where: { id },
-          select: { id: true, club: { select: { organizationId: true } } },
-        });
+      case 'competition':
+        return this.competitionChain(id);
+      case 'event': {
+        const row = await this.prisma.competitionEvent.findUnique({ where: { id }, select: { competitionId: true } });
         if (!row) throw notFound();
-        return [
-          { type: RoleScope.COMPETITION, id: row.id },
-          ...(row.club ? [org(row.club.organizationId)] : []),
-          GLOBAL_SCOPE,
-        ];
+        return this.competitionChain(row.competitionId);
+      }
+      case 'registration': {
+        const row = await this.prisma.competitionParticipant.findUnique({ where: { id }, select: { competitionId: true } });
+        if (!row) throw notFound();
+        return this.competitionChain(row.competitionId);
       }
     }
+  }
+
+  /** A tournament is covered by grants on itself and on its host organization. */
+  private async competitionChain(id: string): Promise<Scope[]> {
+    const row = await this.prisma.competition.findUnique({ where: { id }, select: { id: true, hostOrganizationId: true } });
+    if (!row) throw new NotFoundException(t('errors.http.notFound'));
+    return [
+      { type: RoleScope.COMPETITION, id: row.id },
+      ...(row.hostOrganizationId ? [org(row.hostOrganizationId)] : []),
+      GLOBAL_SCOPE,
+    ];
   }
 
   /**

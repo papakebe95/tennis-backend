@@ -82,7 +82,7 @@ export class LookupsController {
       : {
           OR: [
             { id: { in: scope.competitionIds } },
-            { club: { organizationId: { in: scope.organizationIds } } },
+            { hostOrganizationId: { in: scope.organizationIds } },
           ],
         };
     return this.prisma.competition.findMany({

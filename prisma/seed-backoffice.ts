@@ -176,6 +176,7 @@ export async function seedBackOffice(prisma: PrismaClient) {
   }
 
   await seedMembership(prisma, clubs.slice(0, 2).map((c) => c.organizationId), superAdminId);
+  await seedTournaments(prisma, clubs[0]?.organizationId ?? null, federation.id);
 
   // Access requests, so the review screens have something to show. Rebuilt on
   // every run for the seeded applicants.
@@ -423,4 +424,160 @@ async function seedMembership(prisma: PrismaClient, clubOrgIds: string[], record
     }
   }
   console.log(`Seeded membership: ${players.length} sample players, ${members} members, ${paymentIndex} payments`);
+}
+
+// ---------------------------------------------------------------------------
+// Tournaments: sport profiles for the sample players, a club tournament split
+// into successive tables (30 → 15 → final) with entries in every state, and a
+// federation draft. Rebuilt on every run.
+// ---------------------------------------------------------------------------
+
+type SampleProfile = [gender: 'MALE' | 'FEMALE', birthYear: number, classification: string];
+const SPORT_PROFILES: Record<string, SampleProfile> = {
+  Seynabou: ['FEMALE', 1995, '30/2'],
+  Babacar: ['MALE', 1988, '15/3'],
+  Ndeye: ['FEMALE', 2001, 'NC'],
+  Ousmane: ['MALE', 1979, '30/4'],
+  Khadija: ['FEMALE', 1992, '15/1'],
+  Lamine: ['MALE', 2003, '40'],
+  Adama: ['MALE', 1990, '30'],
+  Rokhaya: ['FEMALE', 1985, '4/6'],
+  Ibou: ['MALE', 1998, '30/1'],
+  Mame: ['MALE', 2011, 'NC'],
+};
+
+async function seedTournaments(prisma: PrismaClient, clubOrgId: string | null, federationId: string) {
+  const classifications = new Map((await prisma.classification.findMany()).map((c) => [c.code, c.id]));
+  if (!classifications.size || !clubOrgId) {
+    console.warn('Skipped tournaments seed: no classification scale or club');
+    return;
+  }
+  const players = new Map<string, string>();
+  for (const [firstname, [gender, year, code]] of Object.entries(SPORT_PROFILES)) {
+    const user = await prisma.user.findFirst({ where: { firstname, email: { endsWith: '@members.example' } } });
+    if (!user) continue;
+    players.set(firstname, user.id);
+    await prisma.playerProfile.update({
+      where: { userId: user.id },
+      data: { gender, birthDate: new Date(Date.UTC(year, 4, 15)), classificationId: classifications.get(code) },
+    });
+  }
+
+  const club = await prisma.club.findUniqueOrThrow({ where: { organizationId: clubOrgId }, include: { city: true } });
+  const clubAdmin = await prisma.user.findUnique({ where: { msisdn: '+221770000003' } });
+  const fedAdmin = await prisma.user.findUnique({ where: { msisdn: '+221770000002' } });
+  const names = ['Open ASAC · Tableaux successifs', 'Championnats nationaux 2026'];
+  await prisma.competition.deleteMany({ where: { name: { in: names } } });
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const at = (days: number, hour = 9) => {
+    const d = new Date(Date.now() + days * DAY_MS);
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour));
+  };
+  const cls = (code: string) => classifications.get(code) ?? null;
+
+  const open = await prisma.competition.create({
+    data: {
+      name: names[0],
+      description:
+        "Tournoi homologué en tableaux successifs : les deux premiers du tableau 30 rejoignent le tableau 15, puis le tableau final. Tableau dames en parallèle.",
+      category: 'Simple · 4e et 3e séries',
+      status: 'REGISTRATION_OPEN',
+      format: 'SINGLE_ELIMINATION',
+      surface: 'HARD',
+      startDate: at(12),
+      endDate: at(17, 20),
+      registrationOpensAt: at(-5),
+      registrationClosesAt: at(9, 23),
+      publishedAt: at(-5),
+      hostOrganizationId: clubOrgId,
+      clubId: club.id,
+      location: `${club.name}, ${club.city.name}`,
+      createdById: clubAdmin?.id,
+      entryFee: 10000,
+      maxParticipants: 40,
+    },
+  });
+  const final = await prisma.competitionEvent.create({
+    data: {
+      competitionId: open.id, name: 'Simple Messieurs · Tableau final', gender: 'MEN', tableOrder: 2,
+      minClassificationId: cls('15'), maxClassificationId: cls('1/6'), maxEntries: 8, entryFee: 15000, seedCount: 2,
+    },
+  });
+  const t15 = await prisma.competitionEvent.create({
+    data: {
+      competitionId: open.id, name: 'Simple Messieurs · Tableau 15', gender: 'MEN', tableOrder: 1,
+      minClassificationId: cls('15/5'), maxClassificationId: cls('15/1'), maxEntries: 8, entryFee: 10000,
+      qualifiesIntoEventId: final.id, qualifierCount: 2,
+    },
+  });
+  const t30 = await prisma.competitionEvent.create({
+    data: {
+      competitionId: open.id, name: 'Simple Messieurs · Tableau 30', gender: 'MEN', tableOrder: 0,
+      minClassificationId: cls('30/5'), maxClassificationId: cls('30'), maxEntries: 16, entryFee: 10000,
+      qualifiesIntoEventId: t15.id, qualifierCount: 2,
+    },
+  });
+  const ladies = await prisma.competitionEvent.create({
+    data: { competitionId: open.id, name: 'Simple Dames', gender: 'WOMEN', tableOrder: 3, maxEntries: 8, entryFee: 10000, finalSet: 'SUPER_TIEBREAK' },
+  });
+
+  const decided = { decidedAt: at(-2), decidedById: clubAdmin?.id };
+  const entries: [string, string, Record<string, unknown>][] = [
+    ['Ousmane', t30.id, { status: 'APPROVED', ...decided }],
+    ['Adama', t30.id, { status: 'APPROVED', ...decided }],
+    ['Ibou', t30.id, { status: 'PENDING' }],
+    // Classified 40: below the table's floor, shown as ineligible.
+    ['Lamine', t30.id, { status: 'PENDING', eligibility: { issues: ['CLASSIFICATION_TOO_WEAK'], override: null } }],
+    ['Babacar', t15.id, { status: 'APPROVED', seed: 1, ...decided }],
+    ['Seynabou', ladies.id, { status: 'APPROVED', ...decided }],
+    ['Khadija', ladies.id, { status: 'APPROVED', seed: 1, ...decided }],
+    ['Rokhaya', ladies.id, { status: 'PENDING' }],
+    ['Ndeye', ladies.id, { status: 'WAITLISTED', ...decided }],
+    ['Mame', ladies.id, { status: 'REJECTED', rejectionReason: 'Tableau réservé aux joueuses', ...decided }],
+  ];
+  for (const [index, [firstname, eventId, fields]] of entries.entries()) {
+    const userId = players.get(firstname);
+    if (!userId) continue;
+    await prisma.competitionParticipant.create({
+      data: { competitionId: open.id, eventId, userId, registeredAt: at(-4 + index * 0.2), ...fields },
+    });
+  }
+  await prisma.auditLog.create({
+    data: {
+      actorId: clubAdmin?.id ?? null,
+      action: 'tournament.created',
+      entityType: 'Competition',
+      entityId: open.id,
+      organizationId: clubOrgId,
+      competitionId: open.id,
+      after: { name: open.name, events: 4 },
+      createdAt: at(-6),
+    },
+  });
+
+  const national = await prisma.competition.create({
+    data: {
+      name: names[1],
+      description: 'Championnats nationaux individuels (brouillon en préparation).',
+      category: 'Simple Messieurs & Dames',
+      status: 'DRAFT',
+      format: 'SINGLE_ELIMINATION',
+      surface: 'HARD',
+      startDate: at(45),
+      endDate: at(51, 20),
+      registrationClosesAt: at(38, 23),
+      hostOrganizationId: federationId,
+      createdById: fedAdmin?.id,
+      entryFee: 20000,
+      maxParticipants: 64,
+    },
+  });
+  await prisma.competitionEvent.createMany({
+    data: [
+      { competitionId: national.id, name: 'Simple Messieurs', gender: 'MEN', tableOrder: 0, maxEntries: 32, entryFee: 20000, seedCount: 8 },
+      { competitionId: national.id, name: 'Simple Dames', gender: 'WOMEN', tableOrder: 1, maxEntries: 32, entryFee: 20000, seedCount: 8 },
+    ],
+  });
+  console.log('Seeded tournaments: successive tables at', club.name, '+ federation draft');
 }

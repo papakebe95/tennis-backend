@@ -27,6 +27,16 @@ import {
   OrganizationsController,
 } from './organizations/organizations.controller.js';
 import { OrganizationsService } from './organizations/organizations.service.js';
+import { EventsService } from './tournaments/events.service.js';
+import { RegistrationsService } from './tournaments/registrations.service.js';
+import { SportProfilesService } from './tournaments/sport-profiles.service.js';
+import {
+  AdminEventsController,
+  AdminRegistrationsController,
+  AdminTournamentsController,
+  SportProfilesController,
+} from './tournaments/tournaments.controller.js';
+import { TournamentsService } from './tournaments/tournaments.service.js';
 import { RolesController } from './roles/roles.controller.js';
 import { RolesService } from './roles/roles.service.js';
 import { AdminUsersController } from './users/admin-users.controller.js';
@@ -54,6 +64,10 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     PaymentsController,
     BookingsAdminController,
     FederationPlayersController,
+    AdminTournamentsController,
+    AdminEventsController,
+    AdminRegistrationsController,
+    SportProfilesController,
   ],
   providers: [
     AdminUsersService,
@@ -67,6 +81,10 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     MembersService,
     PaymentsService,
     ClubOpsService,
+    TournamentsService,
+    EventsService,
+    RegistrationsService,
+    SportProfilesService,
   ],
   exports: [AccessRequestsService, RoleGrantsService],
 })

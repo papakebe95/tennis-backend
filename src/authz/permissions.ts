@@ -43,6 +43,7 @@ export const PERMISSIONS = {
   'federation.clubs.validate': { module: 'organization', description: 'Validate or suspend club affiliations', scopes: [GLOBAL, ORGANIZATION] },
   'federation.players.view': { module: 'organization', description: 'View federation players', scopes: [GLOBAL, ORGANIZATION] },
   'federation.rankings.view': { module: 'organization', description: 'View federation rankings', scopes: [GLOBAL, ORGANIZATION] },
+  'player.sport_profile.manage': { module: 'organization', description: "Set players' classification, gender and birth date", scopes: [GLOBAL, ORGANIZATION] },
   'club.view': { module: 'organization', description: 'View a club profile', scopes: [GLOBAL, ORGANIZATION] },
   'club.update': { module: 'organization', description: 'Edit a club profile', scopes: [GLOBAL, ORGANIZATION] },
   'club.dashboard.view': { module: 'organization', description: 'View the club dashboard', scopes: [GLOBAL, ORGANIZATION] },

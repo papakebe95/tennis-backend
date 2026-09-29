@@ -9,6 +9,7 @@ import { Prisma, RoleScope, UserStatus } from '@prisma/client';
 import { AuditService } from '../../audit/audit.service.js';
 import { AuthzService } from '../../authz/authz.service.js';
 import { SUPER_ADMIN_ROLE_KEY } from '../../authz/default-roles.js';
+import type { PermissionKey } from '../../authz/permissions.js';
 import { GLOBAL_SCOPE, missingFor, holds, type Grant, type Scope } from '../../authz/scope.js';
 import { t } from '../../i18n/i18n.js';
 import { roleGranted } from '../../notifications/notification-messages.js';
@@ -88,9 +89,17 @@ export class RoleGrantsService {
     };
   }
 
-  /** The actor may hand out this role at this scope. */
-  assertMayGrant(actorGrants: readonly Grant[], resolved: Awaited<ReturnType<RoleGrantsService['resolve']>>) {
-    if (!holds(actorGrants, 'user.roles.assign', resolved.chain)) {
+  /**
+   * The actor may hand out this role at this scope. `permission` is what
+   * allows granting there: `user.roles.assign`, or `tournament.staff.manage`
+   * for a tournament's own team.
+   */
+  assertMayGrant(
+    actorGrants: readonly Grant[],
+    resolved: Awaited<ReturnType<RoleGrantsService['resolve']>>,
+    permission: PermissionKey = 'user.roles.assign',
+  ) {
+    if (!holds(actorGrants, permission, resolved.chain)) {
       throw new ForbiddenException({ message: t('errors.http.forbidden'), code: 'FORBIDDEN' });
     }
     const rolePermissions = resolved.role.permissions.map((p) => p.permissionKey);
@@ -131,14 +140,20 @@ export class RoleGrantsService {
   }
 
   /** Grant from the users screen: all checks, then notify the user. */
-  async grant(actorGrants: readonly Grant[], actorId: string, userId: string, target: GrantTarget) {
+  async grant(
+    actorGrants: readonly Grant[],
+    actorId: string,
+    userId: string,
+    target: GrantTarget,
+    permission: PermissionKey = 'user.roles.assign',
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, status: true } });
     if (!user) throw new NotFoundException(t('errors.users.notFound'));
     if (user.status === UserStatus.PENDING) {
       throw new ConflictException(t('errors.admin.grantPendingUser'));
     }
     const resolved = await this.resolve(target);
-    this.assertMayGrant(actorGrants, resolved);
+    this.assertMayGrant(actorGrants, resolved, permission);
 
     const grant = await this.prisma.$transaction((tx) => this.createInTx(tx, actorId, userId, resolved));
     if (!grant) throw new ConflictException(t('errors.admin.grantDuplicate'));
@@ -146,7 +161,14 @@ export class RoleGrantsService {
     return grant;
   }
 
-  async revoke(actorGrants: readonly Grant[], actorId: string, userId: string, grantId: string, reason?: string) {
+  async revoke(
+    actorGrants: readonly Grant[],
+    actorId: string,
+    userId: string,
+    grantId: string,
+    reason?: string,
+    permission: PermissionKey = 'user.roles.assign',
+  ) {
     const grant = await this.prisma.userRole.findFirst({
       where: { id: grantId, userId, revokedAt: null },
       include: { role: { select: { key: true } } },
@@ -158,7 +180,7 @@ export class RoleGrantsService {
       : grant.competitionId
         ? await this.authz.scopeChain('competition', grant.competitionId)
         : [GLOBAL_SCOPE];
-    if (!holds(actorGrants, 'user.roles.assign', chain)) {
+    if (!holds(actorGrants, permission, chain)) {
       throw new ForbiddenException({ message: t('errors.http.forbidden'), code: 'FORBIDDEN' });
     }
 

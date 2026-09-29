@@ -197,10 +197,72 @@ enum CompetitionFormat {
   ROUND_ROBIN
 }
 
+// Explicit tournament lifecycle, driven from the back-office (see
+// src/admin/tournaments/tournament-lifecycle.ts). The player API still speaks
+// UPCOMING / ONGOING / COMPLETED, derived from it.
 enum CompetitionStatus {
-  UPCOMING
-  ONGOING
+  DRAFT
+  REGISTRATION_OPEN
+  REGISTRATION_CLOSED
+  IN_PROGRESS
+  INTERRUPTED
   COMPLETED
+  CANCELLED
+}
+
+enum CompetitionVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum EventDiscipline {
+  SINGLES
+  DOUBLES
+}
+
+enum EventGender {
+  MEN
+  WOMEN
+  MIXED
+  OPEN
+}
+
+// Per event: a tournament can have one draw published and another pending.
+enum DrawStatus {
+  NOT_GENERATED
+  DRAFT
+  PUBLISHED
+  LOCKED
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  WAITLISTED
+  REJECTED
+  WITHDRAWN
+}
+
+// How an entry got into its event: directly, or up from a lower table.
+enum EntryType {
+  DIRECT
+  QUALIFIER
+  LUCKY_LOSER
+  ALTERNATE
+  WILDCARD
+}
+
+enum InterruptionReason {
+  WEATHER
+  COURT_ISSUE
+  ORGANIZATIONAL
+  EMERGENCY
+  OTHER
+}
+
+enum Gender {
+  MALE
+  FEMALE
 }
 
 enum StoryKind {
@@ -291,10 +353,15 @@ model User {
 
   bookings               Booking[]
   partnerRequests        PartnerRequest[]
-  matchesAsPlayer1       Match[]                  @relation("MatchPlayer1")
-  matchesAsPlayer2       Match[]                  @relation("MatchPlayer2")
-  matchesWon             Match[]                  @relation("MatchWinner")
+  matchesAsPlayer1       Match[]                   @relation("MatchPlayer1")
+  matchesAsPlayer2       Match[]                   @relation("MatchPlayer2")
+  matchesWon             Match[]                   @relation("MatchWinner")
   competitionParticipant CompetitionParticipant[]
+  competitionPartnerOf   CompetitionParticipant[]  @relation("ParticipantPartner")
+  registrationsDecided   CompetitionParticipant[]  @relation("ParticipantDecider")
+  competitionsCreated    Competition[]             @relation("CompetitionCreator")
+  interruptionsStarted   CompetitionInterruption[] @relation("InterruptionStarter")
+  interruptionsResumed   CompetitionInterruption[] @relation("InterruptionResumer")
   favorites              Favorite[]
   notifications          Notification[]
   refreshTokens          RefreshToken[]
@@ -331,13 +398,34 @@ model PlayerProfile {
   availabilityStatus AvailabilityStatus @default(AVAILABLE)
   // Short free text shown next to the status ("Back on court mid-October").
   availabilityNote   String?
+  // Sport identity used for tournament eligibility (set by the federation).
+  gender             Gender?
+  birthDate          DateTime?          @db.Date
+  classificationId   String?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classification Classification? @relation(fields: [classificationId], references: [id], onDelete: SetNull)
 }
 
-// Additional contact numbers. The user's primary number stays in
+// National classification scale ("30/1", "15", "-2/6"…). `rank` orders it from
+// strongest (1) to weakest; "NC" (not classified) is the weakest step and is
+// assumed for players without one.
+model Classification {
+  id     String @id @default(cuid())
+  code   String @unique
+  label  String
+  rank   Int    @unique
+  // Series the step belongs to ("S2", "S3", "S4", "NC"), for grouping.
+  series String
+
+  profiles          PlayerProfile[]
+  eventsAsWeakest   CompetitionEvent[] @relation("EventMinClassification")
+  eventsAsStrongest CompetitionEvent[] @relation("EventMaxClassification")
+}
+
+// Additional contact numbers). The user's primary number stays in
 // `User.msisdn`; "make primary" swaps the two inside a transaction.
 model UserPhone {
   id        String     @id @default(cuid())
@@ -389,6 +477,7 @@ model Organization {
   memberships    OrganizationAffiliation[] @relation("AffiliationMember")
   payments       Payment[]
   affiliations   OrganizationAffiliation[] @relation("AffiliationParent")
+  competitions   Competition[]
 
   @@index([type, status])
 }
@@ -940,53 +1029,160 @@ model MatchSet {
 // Dart model all say tournament; the API path is /competitions). Tables:
 // Competition, CompetitionParticipant (registrations), CompetitionRound and
 // CompetitionMatch (bracket — modelled but not yet populated or exposed).
+//
+// A tournament holds one or more events ("tables"): each has its own
+// eligibility, rules, entries and (from Phase 6) draw. Lower tables can feed
+// qualifiers into a higher one (`qualifiesIntoEventId`).
 // ---------------------------------------------------------------------------
 
 model Competition {
-  id              String            @id @default(cuid())
-  name            String
-  bannerUrl       String?
-  clubId          String?
-  location        String?
-  startDate       DateTime
-  endDate         DateTime
-  category        String?
-  surface         Surface?
-  format          CompetitionFormat
-  status          CompetitionStatus @default(UPCOMING)
-  description     String?
+  id                   String                @id @default(cuid())
+  name                 String
+  bannerUrl            String?
+  clubId               String?
+  location             String?
+  startDate            DateTime
+  endDate              DateTime
+  category             String?
+  surface              Surface?
+  format               CompetitionFormat
+  status               CompetitionStatus     @default(DRAFT)
+  description          String?
   // Translations of this row's text: { "fr": { "<field>": "..." } }. The plain
   // columns are the default language (English) and the fallback; see
   // src/i18n/localize.ts.
-  translations    Json?
+  translations         Json?
   // Highlighted first on the Home tab.
-  featured        Boolean           @default(false)
-  maxParticipants Int?
-  entryFee        Decimal?          @db.Decimal(12, 2)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  featured             Boolean               @default(false)
+  maxParticipants      Int?
+  entryFee             Decimal?              @db.Decimal(12, 2)
+  // Who runs it: a club, federation or community (null = independent
+  // organizer). Decides which organization's staff can manage it. `clubId`
+  // stays the venue shown to players.
+  hostOrganizationId   String?
+  createdById          String?
+  visibility           CompetitionVisibility @default(PUBLIC)
+  timezone             String                @default("Africa/Dakar")
+  currency             String                @default("XOF")
+  registrationOpensAt  DateTime?
+  registrationClosesAt DateTime?
+  publishedAt          DateTime?
+  cancelledAt          DateTime?
+  cancelReason         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
-  club         Club?                    @relation(fields: [clubId], references: [id], onDelete: SetNull)
-  participants CompetitionParticipant[]
-  rounds       CompetitionRound[]
-  staff        UserRole[]
-  auditLogs    AuditLog[]
+  club             Club?                     @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  hostOrganization Organization?             @relation(fields: [hostOrganizationId], references: [id], onDelete: SetNull)
+  createdBy        User?                     @relation("CompetitionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  events           CompetitionEvent[]
+  interruptions    CompetitionInterruption[]
+  participants     CompetitionParticipant[]
+  rounds           CompetitionRound[]
+  staff            UserRole[]
+  auditLogs        AuditLog[]
+
+  @@index([hostOrganizationId])
+  @@index([status, startDate])
 }
 
-model CompetitionParticipant {
-  id            String @id @default(cuid())
-  competitionId String
-  userId        String
-  seed          Int?
+// One table of a tournament: "Simple Messieurs 4e série", "Tableau final"…
+model CompetitionEvent {
+  id                   String            @id @default(cuid())
+  competitionId        String
+  name                 String
+  discipline           EventDiscipline   @default(SINGLES)
+  gender               EventGender       @default(OPEN)
+  ageMin               Int?
+  ageMax               Int?
+  // Classification window: weakest and strongest step admitted.
+  minClassificationId  String?
+  maxClassificationId  String?
+  format               CompetitionFormat @default(SINGLE_ELIMINATION)
+  maxEntries           Int?
+  entryFee             Decimal?          @db.Decimal(12, 2)
+  seedCount            Int               @default(0)
+  // Match rules
+  bestOf               Int               @default(3)
+  gamesPerSet          Int               @default(6)
+  finalSet             FinalSetFormat    @default(TIEBREAK)
+  noAd                 Boolean           @default(false)
+  matchDurationMinutes Int               @default(90)
+  // Successive tables: this table sends `qualifierCount` players up into
+  // `qualifiesIntoEvent`. Lower tables come first (`tableOrder`).
+  qualifiesIntoEventId String?
+  qualifierCount       Int               @default(0)
+  tableOrder           Int               @default(0)
+  drawStatus           DrawStatus        @default(NOT_GENERATED)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  competition        Competition              @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  minClassification  Classification?          @relation("EventMinClassification", fields: [minClassificationId], references: [id], onDelete: SetNull)
+  maxClassification  Classification?          @relation("EventMaxClassification", fields: [maxClassificationId], references: [id], onDelete: SetNull)
+  qualifiesIntoEvent CompetitionEvent?        @relation("SuccessiveTables", fields: [qualifiesIntoEventId], references: [id], onDelete: SetNull)
+  feederEvents       CompetitionEvent[]       @relation("SuccessiveTables")
+  entries            CompetitionParticipant[]
+  qualifiedEntries   CompetitionParticipant[] @relation("EntrySourceEvent")
+
+  @@index([competitionId, tableOrder])
+}
+
+// A tournament stopped mid-play (rain, power cut…) and when it resumed.
+model CompetitionInterruption {
+  id                   String             @id @default(cuid())
+  competitionId        String
+  reason               InterruptionReason
+  note                 String?
+  // Status to return to on resume.
+  previousStatus       CompetitionStatus
+  startedAt            DateTime           @default(now())
+  startedById          String?
+  resumedAt            DateTime?
+  resumedById          String?
+  participantsNotified Boolean            @default(false)
 
   competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedBy   User?       @relation("InterruptionStarter", fields: [startedById], references: [id], onDelete: SetNull)
+  resumedBy   User?       @relation("InterruptionResumer", fields: [resumedById], references: [id], onDelete: SetNull)
+
+  @@index([competitionId, startedAt])
+}
+
+// An ENTRY in one event: a player (singles) or a pair (doubles).
+model CompetitionParticipant {
+  id              String             @id @default(cuid())
+  competitionId   String
+  eventId         String
+  userId          String
+  partnerUserId   String?
+  seed            Int?
+  status          RegistrationStatus @default(PENDING)
+  entryType       EntryType          @default(DIRECT)
+  // For QUALIFIER / LUCKY_LOSER entries: the lower table they come from.
+  sourceEventId   String?
+  registeredAt    DateTime           @default(now())
+  decidedAt       DateTime?
+  decidedById     String?
+  rejectionReason String?
+  // Snapshot of the eligibility check when the entry was accepted, including
+  // any override and its reason.
+  eligibility     Json?
+
+  competition Competition       @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event       CompetitionEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sourceEvent CompetitionEvent? @relation("EntrySourceEvent", fields: [sourceEventId], references: [id], onDelete: SetNull)
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partner     User?             @relation("ParticipantPartner", fields: [partnerUserId], references: [id], onDelete: SetNull)
+  decidedBy   User?             @relation("ParticipantDecider", fields: [decidedById], references: [id], onDelete: SetNull)
 
   matchesAsParticipant1 CompetitionMatch[] @relation("CompetitionMatchParticipant1")
   matchesAsParticipant2 CompetitionMatch[] @relation("CompetitionMatchParticipant2")
   matchesWon            CompetitionMatch[] @relation("CompetitionMatchWinner")
 
-  @@unique([competitionId, userId])
+  @@unique([eventId, userId])
+  @@index([competitionId, userId])
+  @@index([eventId, status])
 }
 
 model CompetitionRound {

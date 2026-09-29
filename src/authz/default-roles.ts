@@ -70,9 +70,13 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
       'federation.clubs.validate',
       'federation.players.view',
       'federation.rankings.view',
+      'player.sport_profile.manage',
       'tournament.create',
       'user.roles.assign',
       ...TOURNAMENT_RUN,
+      // Appoints tournament directors, so holds what they hold.
+      'draw.modify_locked',
+      'payment.refund',
     ],
   },
   {
@@ -114,6 +118,7 @@ export const DEFAULT_ROLES: readonly RoleDefinition[] = [
       'tournament.create',
       'user.roles.assign',
       ...TOURNAMENT_RUN,
+      'draw.modify_locked',
     ],
   },
   {

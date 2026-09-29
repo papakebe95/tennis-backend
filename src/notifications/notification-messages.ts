@@ -25,7 +25,15 @@ export type NotificationKey =
   | 'accessApproved'
   | 'accessRejected'
   | 'accessInfoRequested'
-  | 'roleGranted';
+  | 'roleGranted'
+  | 'registrationReceived'
+  | 'registrationApproved'
+  | 'registrationRejected'
+  | 'registrationWaitlisted'
+  | 'registrationWithdrawn'
+  | 'tournamentCancelled'
+  | 'tournamentInterrupted'
+  | 'tournamentResumed';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -78,6 +86,10 @@ export function renderNotification(
       lang,
     );
     text.outcome = params.score ? `${outcome} ${params.score}` : outcome;
+  }
+  if (key === 'tournamentInterrupted' && typeof params.reasonCode === 'string') {
+    const reason = t(`tournamentInterruptionReasons.${params.reasonCode}` as MessageKey, undefined, lang);
+    text.reason = params.note ? `${reason} (${params.note})` : reason;
   }
   return {
     title: t(`notifications.${key}.title` as MessageKey, text, lang),
@@ -210,3 +222,30 @@ export const accessInfoRequested = (roleName: string): NotifyInput =>
 
 export const roleGranted = (roleName: string, scopeName: string): NotifyInput =>
   build(NotificationType.SYSTEM, 'roleGranted', { roleName, scopeName });
+
+// Tournament entries and lifecycle; they open the tournament in the app.
+const tournament = (key: NotificationKey, competitionId: string, params: NotificationParams) =>
+  build(NotificationType.TOURNAMENT, key, params, `/tournaments/${competitionId}`);
+
+export const registrationReceived = (competitionId: string, name: string): NotifyInput =>
+  tournament('registrationReceived', competitionId, { name });
+
+export type RegistrationOutcome = 'registrationApproved' | 'registrationRejected' | 'registrationWaitlisted' | 'registrationWithdrawn';
+
+export const registrationDecided = (
+  outcome: RegistrationOutcome,
+  competitionId: string,
+  name: string,
+  eventName: string,
+  reason?: string | null,
+): NotifyInput => tournament(outcome, competitionId, { name, eventName, reason: reason ?? '' });
+
+export const tournamentCancelled = (competitionId: string, name: string, reason: string): NotifyInput =>
+  tournament('tournamentCancelled', competitionId, { name, reason });
+
+/** `reasonCode` is an InterruptionReason, worded in the reader's language. */
+export const tournamentInterrupted = (competitionId: string, name: string, reasonCode: string, note?: string | null): NotifyInput =>
+  tournament('tournamentInterrupted', competitionId, { name, reasonCode, note: note ?? null });
+
+export const tournamentResumed = (competitionId: string, name: string): NotifyInput =>
+  tournament('tournamentResumed', competitionId, { name });

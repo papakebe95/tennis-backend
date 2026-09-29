@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AccessRequestStatus, BookingStatus, OrganizationType, UserStatus } from '@prisma/client';
-import { effectiveStatus } from '../../competitions/competitions.service.js';
+import { publicStatus } from '../tournaments/tournament-lifecycle.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -51,7 +51,7 @@ export class DashboardService {
       this.prisma.user.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.user.count({ where: { lastLoginAt: { gte: new Date(now.getTime() - 30 * DAY_MS) } } }),
       this.prisma.organization.groupBy({ by: ['type'], where: { status: 'ACTIVE' }, _count: { _all: true } }),
-      this.prisma.competition.findMany({ select: { status: true, startDate: true, endDate: true } }),
+      this.prisma.competition.findMany({ select: { status: true } }),
       this.prisma.booking.count({
         where: { status: { not: BookingStatus.CANCELLED }, startTime: { gte: now, lt: new Date(now.getTime() + 7 * DAY_MS) } },
       }),
@@ -87,7 +87,7 @@ export class DashboardService {
     const requestCount = (status: AccessRequestStatus) =>
       requestsByStatus.find((r) => r.status === status)?._count._all ?? 0;
     const tournaments = { UPCOMING: 0, ONGOING: 0, COMPLETED: 0 };
-    for (const competition of competitions) tournaments[effectiveStatus(competition, now)]++;
+    for (const competition of competitions) tournaments[publicStatus(competition.status) ?? 'UPCOMING']++;
 
     return {
       generatedAt: now.toISOString(),

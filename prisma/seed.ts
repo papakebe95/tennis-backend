@@ -1137,7 +1137,7 @@ const COMPETITION_SEEDS: CompetitionSeed[] = [
       'The biggest amateur weekend of the season. Single elimination, best of three sets, a proper draw sheet and a trophy ceremony under the floodlights.',
     surface: Surface.HARD,
     format: CompetitionFormat.SINGLE_ELIMINATION,
-    status: CompetitionStatus.ONGOING,
+    status: CompetitionStatus.IN_PROGRESS,
     startsInDays: -2,
     lengthDays: 5,
     featured: true,
@@ -1153,7 +1153,7 @@ const COMPETITION_SEEDS: CompetitionSeed[] = [
       'Two draws, one weekend. Play at your level, meet players from every club in the city and take home points for the season ranking.',
     surface: Surface.HARD,
     format: CompetitionFormat.SINGLE_ELIMINATION,
-    status: CompetitionStatus.UPCOMING,
+    status: CompetitionStatus.REGISTRATION_OPEN,
     startsInDays: 6,
     lengthDays: 3,
     featured: true,
@@ -1169,7 +1169,7 @@ const COMPETITION_SEEDS: CompetitionSeed[] = [
       'Long rallies, sliding and sea air. A round-robin so everybody plays at least three matches.',
     surface: Surface.CLAY,
     format: CompetitionFormat.ROUND_ROBIN,
-    status: CompetitionStatus.UPCOMING,
+    status: CompetitionStatus.REGISTRATION_OPEN,
     startsInDays: 19,
     lengthDays: 2,
     maxParticipants: 16,
@@ -1184,7 +1184,7 @@ const COMPETITION_SEEDS: CompetitionSeed[] = [
       'After-work matches under the lights. Short format, relaxed vibe, big atmosphere.',
     surface: Surface.HARD,
     format: CompetitionFormat.ROUND_ROBIN,
-    status: CompetitionStatus.UPCOMING,
+    status: CompetitionStatus.REGISTRATION_OPEN,
     startsInDays: 33,
     lengthDays: 4,
     maxParticipants: 24,
@@ -1199,7 +1199,7 @@ const COMPETITION_SEEDS: CompetitionSeed[] = [
       'Experience beats power. A friendly but fiercely fought event for players over 45.',
     surface: Surface.HARD,
     format: CompetitionFormat.SINGLE_ELIMINATION,
-    status: CompetitionStatus.UPCOMING,
+    status: CompetitionStatus.REGISTRATION_OPEN,
     startsInDays: 52,
     lengthDays: 2,
     maxParticipants: 16,
@@ -1251,6 +1251,7 @@ async function seedHome() {
     include: { city: true },
   });
   const competitionIds: Record<string, string> = {};
+  const eventIds: Record<string, string> = {};
 
   for (const seed of COMPETITION_SEEDS) {
     const club = clubList.length ? clubList[seed.clubIndex % clubList.length] : null;
@@ -1270,6 +1271,8 @@ async function seedHome() {
       startDate,
       endDate,
       clubId: club?.id ?? null,
+      hostOrganizationId: club?.organizationId ?? null,
+      publishedAt: new Date(startDate.getTime() - 30 * DAY_MS),
       location: club ? `${club.name}, ${club.city.name}` : null,
       bannerUrl: unsplashUrl(
         TENNIS_PHOTO_IDS[hashIndex(`competition-${seed.key}`, TENNIS_PHOTO_IDS.length)],
@@ -1282,6 +1285,18 @@ async function seedHome() {
       ? await prisma.competition.update({ where: { id: existing.id }, data })
       : await prisma.competition.create({ data });
     competitionIds[seed.key] = competition.id;
+    // One table per sample tournament, like the migration gave existing ones.
+    const event = await prisma.competitionEvent.findFirst({ where: { competitionId: competition.id } });
+    const eventData = {
+      name: seed.category,
+      format: seed.format,
+      maxEntries: seed.maxParticipants,
+      entryFee: seed.entryFee,
+      ageMin: seed.key === 'masters-45' ? 45 : null,
+    };
+    eventIds[seed.key] = event
+      ? (await prisma.competitionEvent.update({ where: { id: event.id }, data: eventData })).id
+      : (await prisma.competitionEvent.create({ data: { ...eventData, competitionId: competition.id } })).id;
   }
 
   // A handful of registered players so the cards aren't empty.
@@ -1297,7 +1312,9 @@ async function seedHome() {
     await prisma.competitionParticipant.createMany({
       data: users.slice(0, count).map((u, i) => ({
         competitionId: competitionIds[key],
+        eventId: eventIds[key],
         userId: u.id,
+        status: 'APPROVED' as const,
         seed: i + 1,
       })),
       skipDuplicates: true,
