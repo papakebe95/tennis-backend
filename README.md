@@ -343,6 +343,36 @@ Rules enforced server-side:
 - **Replacing a player** is allowed until their next match starts. The player leaves as `WITHDRAWN` with the reason, and the player, the newcomer and the opponent are notified. Someone who hasn't played yet is replaced on the draw itself. Someone who already won a match is replaced only in the match they're due to play.
 - A placed entry can't be withdrawn or waitlisted from the entries screen (`ENTRY_IN_DRAW`): it leaves through a replacement.
 
+### Matches, results and scheduling
+
+| Endpoints | Permission (on the match's tournament or its host) |
+|---|---|
+| `GET /admin/matches` (scoped; `?competitionId&eventId&status&resultStatus&courtId&date&mine&q`), `GET /admin/matches/:id` | `match.view` |
+| `PATCH/DELETE /admin/matches/:id/schedule {scheduledAt, courtId}`, `PATCH …/official` | `match.schedule` |
+| `POST …/start`, `POST …/result {outcome, sets, loserSide, version, reason?}` | `match.result.enter` |
+| `POST …/result/validate` | `match.result.validate` |
+| `POST …/result/dispute`, `POST …/postpone` | `match.status.manage` |
+| `GET /admin/tournaments/:id/schedule?date=`, `GET …/officials`, `GET/PUT …/courts` | `match.view`, `match.schedule`, `tournament.view` / `tournament.update` |
+
+- **Scores** (`src/admin/tournaments/tennis-score.ts`, pure and unit-tested):
+  - Sets to `gamesPerSet` by two, 7-5, or 7-6 with the tiebreak points (first to 7, by two).
+  - The deciding set follows the table's rule: normal tiebreak, match tiebreak to 10 (stored as a 1-0 set), or advantage set.
+  - No set after the match is decided.
+  - A retirement keeps the score so far (the last set may be unfinished); a walkover has no score.
+- **Workflow:**
+  - A result entered by an official waits for validation (`ENTERED`). One entered by someone holding `match.result.validate` is validated at once.
+  - Validation completes the match and moves the winner into `nextMatch` (side `nextSlot`); the next match becomes READY or SCHEDULED.
+  - Correcting a validated result needs a reason and is refused once the winner's next match has started.
+  - A dispute keeps the result (and the winner through) until validated again or corrected.
+  - Result forms send the match `version`; a stale one gets `409 MATCH_VERSION_CONFLICT`.
+- **Player history:** a validated singles result also writes a linked `Match` (type OFFICIAL, with its sets) for the players' history and season ranking. Walkovers don't.
+- **Officials:** grants carrying `match.assigned_only` (the Official role) only see, start and score the matches they are assigned to.
+- **Scheduling:**
+  - A match can go on one of the tournament's courts (`CompetitionCourt`, else the venue club's courts), inside the court's opening hours, for the table's expected match length.
+  - It is refused (`409 SCHEDULE_CONFLICT` with the conflicts) when the court is taken by another match, of any tournament, or by a booking, or when a player is already on court then.
+  - Player bookings and court availability, in turn, treat scheduled tournament matches as taken.
+- Completing a tournament needs every match finished (postponed ones count as unfinished).
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

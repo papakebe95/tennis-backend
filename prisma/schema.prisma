@@ -282,6 +282,26 @@ enum CompetitionMatchStatus {
   COMPLETED
   // One side is a bye: the other advances without playing.
   BYE
+  // Put off: its time and court are cleared, to be scheduled again.
+  POSTPONED
+}
+
+// How a tournament match ended.
+enum MatchOutcome {
+  PLAYED
+  // Retirement during the match: the other side wins with the score so far.
+  RETIRED
+  // Not played: the other side goes through.
+  WALKOVER
+}
+
+// Result workflow: entered by an official, validated by a director (or
+// validated at once when entered by someone allowed to validate).
+enum ResultStatus {
+  NONE
+  ENTERED
+  VALIDATED
+  DISPUTED
 }
 
 // What a first-round draw position holds.
@@ -377,6 +397,7 @@ model User {
   competitionsCreated    Competition[]             @relation("CompetitionCreator")
   interruptionsStarted   CompetitionInterruption[] @relation("InterruptionStarter")
   interruptionsResumed   CompetitionInterruption[] @relation("InterruptionResumer")
+  matchesOfficiated      CompetitionMatch[]        @relation("MatchOfficial")
   favorites              Favorite[]
   notifications          Notification[]
   refreshTokens          RefreshToken[]
@@ -737,6 +758,7 @@ model Court {
   matches            Match[]
   competitionMatches CompetitionMatch[]
   availability       CourtAvailability[]
+  competitions       CompetitionCourt[]
 
   @@index([clubId])
   @@index([cityId])
@@ -1092,6 +1114,7 @@ model Competition {
   createdBy        User?                     @relation("CompetitionCreator", fields: [createdById], references: [id], onDelete: SetNull)
   events           CompetitionEvent[]
   interruptions    CompetitionInterruption[]
+  courts           CompetitionCourt[]
   participants     CompetitionParticipant[]
   rounds           CompetitionRound[]
   staff            UserRole[]
@@ -1257,20 +1280,35 @@ model DrawSlot {
 // MatchSet rows) so the Match/MatchSet tables remain the single source of
 // truth for scores.
 model CompetitionMatch {
-  id             String                 @id @default(cuid())
-  roundId        String
+  id                  String                 @id @default(cuid())
+  roundId             String
   // 0-based index within the round: deterministic layout.
-  position       Int                    @default(0)
+  position            Int                    @default(0)
   // 1 or 2: which side of `nextMatch` the winner fills.
-  nextSlot       Int?
-  participant1Id String?
-  participant2Id String?
-  winnerId       String?
-  status         CompetitionMatchStatus @default(PENDING)
-  scheduledAt    DateTime?
-  courtId        String?
-  nextMatchId    String?
-  linkedMatchId  String?                @unique
+  nextSlot            Int?
+  outcome             MatchOutcome?
+  resultStatus        ResultStatus           @default(NONE)
+  // Side that retired or didn't show (outcome RETIRED / WALKOVER).
+  loserSide           Int?
+  officialUserId      String?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  resultEnteredById   String?
+  resultEnteredAt     DateTime?
+  resultValidatedById String?
+  resultValidatedAt   DateTime?
+  disputeReason       String?
+  notes               String?
+  // Optimistic locking: result forms send the version they showed.
+  version             Int                    @default(0)
+  participant1Id      String?
+  participant2Id      String?
+  winnerId            String?
+  status              CompetitionMatchStatus @default(PENDING)
+  scheduledAt         DateTime?
+  courtId             String?
+  nextMatchId         String?
+  linkedMatchId       String?                @unique
 
   round        CompetitionRound        @relation(fields: [roundId], references: [id], onDelete: Cascade)
   participant1 CompetitionParticipant? @relation("CompetitionMatchParticipant1", fields: [participant1Id], references: [id], onDelete: SetNull)
@@ -1284,9 +1322,43 @@ model CompetitionMatch {
   nextMatch       CompetitionMatch?  @relation("BracketProgression", fields: [nextMatchId], references: [id], onDelete: SetNull)
   previousMatches CompetitionMatch[] @relation("BracketProgression")
 
-  linkedMatch Match? @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
+  linkedMatch Match?                @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
+  official    User?                 @relation("MatchOfficial", fields: [officialUserId], references: [id], onDelete: SetNull)
+  sets        CompetitionMatchSet[]
 
   @@unique([roundId, position])
+  @@index([scheduledAt])
+  @@index([officialUserId])
+}
+
+// Tournament scores live here (Match is singles-only and "player1 = the
+// recorder"). Side 1 / side 2 follow the CompetitionMatch participants. A
+// match tiebreak (to 10) is stored as a 1-0 set with its points.
+model CompetitionMatchSet {
+  id              String  @id @default(cuid())
+  matchId         String
+  setNumber       Int
+  side1Games      Int
+  side2Games      Int
+  tiebreak1       Int?
+  tiebreak2       Int?
+  isSuperTiebreak Boolean @default(false)
+
+  match CompetitionMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, setNumber])
+}
+
+// Courts a tournament plays on (possibly across clubs). None listed: the
+// venue club's courts.
+model CompetitionCourt {
+  competitionId String
+  courtId       String
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  court       Court       @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@id([competitionId, courtId])
 }
 
 // ---------------------------------------------------------------------------

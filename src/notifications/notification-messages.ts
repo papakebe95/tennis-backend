@@ -37,7 +37,10 @@ export type NotificationKey =
   | 'drawPublished'
   | 'drawPlaced'
   | 'drawReplacedOut'
-  | 'drawOpponentChanged';
+  | 'drawOpponentChanged'
+  | 'tournamentMatchScheduled'
+  | 'tournamentMatchResult'
+  | 'tournamentMatchPostponed';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -263,3 +266,19 @@ export const drawNotification = (
   eventName: string,
   reason?: string | null,
 ): NotifyInput => tournament(key, competitionId, { name, eventName, reason: reason ?? '' });
+
+export type MatchNotificationKey = 'matchScheduled' | 'matchResult' | 'matchPostponed';
+const MATCH_KEYS: Record<MatchNotificationKey, NotificationKey> = {
+  matchScheduled: 'tournamentMatchScheduled',
+  matchResult: 'tournamentMatchResult',
+  matchPostponed: 'tournamentMatchPostponed',
+};
+
+/** Tournament match news; `start` (ISO) is spoken as a slot ("Sat 11 Oct, 10:00"). */
+export const matchNotification = (
+  key: MatchNotificationKey,
+  competitionId: string,
+  name: string,
+  eventName: string,
+  params: Record<string, string>,
+): NotifyInput => tournament(MATCH_KEYS[key], competitionId, { name, eventName, ...params });

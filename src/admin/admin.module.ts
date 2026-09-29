@@ -28,6 +28,8 @@ import {
 } from './organizations/organizations.controller.js';
 import { OrganizationsService } from './organizations/organizations.service.js';
 import { DrawService } from './tournaments/draw.service.js';
+import { AdminMatchesController, TournamentScheduleController } from './tournaments/matches.controller.js';
+import { MatchesService } from './tournaments/matches.service.js';
 import { EventsService } from './tournaments/events.service.js';
 import { RegistrationsService } from './tournaments/registrations.service.js';
 import { SportProfilesService } from './tournaments/sport-profiles.service.js';
@@ -71,6 +73,8 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     AdminRegistrationsController,
     SportProfilesController,
     AdminDrawController,
+    AdminMatchesController,
+    TournamentScheduleController,
   ],
   providers: [
     AdminUsersService,
@@ -89,6 +93,7 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     RegistrationsService,
     SportProfilesService,
     DrawService,
+    MatchesService,
   ],
   exports: [AccessRequestsService, RoleGrantsService],
 })

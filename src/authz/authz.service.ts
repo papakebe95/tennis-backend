@@ -23,7 +23,8 @@ export type ResourceType =
   | 'payment'
   | 'booking'
   | 'event'
-  | 'registration';
+  | 'registration'
+  | 'match';
 
 const org = (id: string): Scope => ({ type: RoleScope.ORGANIZATION, id });
 
@@ -121,6 +122,11 @@ export class AuthzService implements OnApplicationBootstrap {
         const row = await this.prisma.competitionEvent.findUnique({ where: { id }, select: { competitionId: true } });
         if (!row) throw notFound();
         return this.competitionChain(row.competitionId);
+      }
+      case 'match': {
+        const row = await this.prisma.competitionMatch.findUnique({ where: { id }, select: { round: { select: { competitionId: true } } } });
+        if (!row) throw notFound();
+        return this.competitionChain(row.round.competitionId);
       }
       case 'registration': {
         const row = await this.prisma.competitionParticipant.findUnique({ where: { id }, select: { competitionId: true } });

@@ -93,6 +93,25 @@ export const en = {
       notEligible: "You aren't eligible for any table of this tournament (classification, age or gender)",
       rejected: 'Your registration for this tournament was declined',
     },
+    tournamentMatches: {
+      notFound: 'Match not found',
+      cannotSchedule: "This match can't be scheduled (played, bye or in progress)",
+      cannotPostpone: "A finished match can't be postponed",
+      cannotStart: 'Only a match with both players known can start',
+      cannotScore: 'A bye has no result',
+      notPlaying: 'The tournament is not in progress',
+      sidesUnknown: 'Both players must be known to record a result',
+      courtNotAllowed: "This court isn't one of the tournament's courts",
+      scheduleConflict: 'This slot clashes with other commitments',
+      officialNotAllowed: "This person can't officiate matches of this tournament",
+      notAssigned: 'You are not the official of this match',
+      correctionForbidden: 'Correcting a validated result needs the right to validate results',
+      invalidScore: "This score isn't valid",
+      nothingToValidate: 'There is no result waiting for validation',
+      cannotDispute: 'There is no result to dispute',
+      nextMatchStarted: "The winner's next match has started: this result can no longer change",
+      stale: 'The match changed in the meantime: reload it and try again',
+    },
     draws: {
       formatUnsupported: 'Only single-elimination draws can be generated for now',
       alreadyPublished: 'The draw is published: reset it before drawing again',
@@ -335,6 +354,18 @@ export const en = {
     OTHER: 'Other reason',
   },
   notifications: {
+    tournamentMatchScheduled: {
+      title: 'Match scheduled',
+      body: '{eventName} · {name}: {slot} on {court}.',
+    },
+    tournamentMatchResult: {
+      title: 'Result recorded',
+      body: '{eventName} · {name}: {score}.',
+    },
+    tournamentMatchPostponed: {
+      title: 'Match postponed',
+      body: '{eventName} · {name}: your match is postponed ({reason}). A new time will follow.',
+    },
     drawPublished: {
       title: 'The draw is out',
       body: 'See who you play in {eventName} · {name}.',

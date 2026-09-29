@@ -1,3 +1,4 @@
+import { matchBlocks } from '../admin/tournaments/court-occupancy.js';
 import {
   BadRequestException,
   ConflictException,
@@ -69,6 +70,9 @@ export class BookingsService {
       },
     });
     if (overlapping) {
+      throw new ConflictException(t('errors.bookings.slotTaken'));
+    }
+    if ((await matchBlocks(this.prisma, { courtIds: [dto.courtId] }, startTime, endTime)).length) {
       throw new ConflictException(t('errors.bookings.slotTaken'));
     }
 

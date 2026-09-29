@@ -92,6 +92,25 @@ export const fr: Messages = {
       notEligible: "Vous n'êtes éligible à aucun tableau de ce tournoi (classement, âge ou sexe)",
       rejected: 'Votre inscription à ce tournoi a été refusée',
     },
+    tournamentMatches: {
+      notFound: 'Match introuvable',
+      cannotSchedule: 'Ce match ne peut pas être programmé (joué, exempt ou en cours)',
+      cannotPostpone: 'Un match terminé ne peut pas être reporté',
+      cannotStart: 'Seul un match dont les deux joueurs sont connus peut commencer',
+      cannotScore: "Un exempt n'a pas de résultat",
+      notPlaying: "Le tournoi n'est pas en cours",
+      sidesUnknown: 'Les deux joueurs doivent être connus pour saisir un résultat',
+      courtNotAllowed: "Ce court ne fait pas partie des courts du tournoi",
+      scheduleConflict: "Ce créneau entre en conflit avec d'autres engagements",
+      officialNotAllowed: 'Cette personne ne peut pas arbitrer les matchs de ce tournoi',
+      notAssigned: "Vous n'êtes pas l'arbitre de ce match",
+      correctionForbidden: 'Corriger un résultat validé demande le droit de valider les résultats',
+      invalidScore: "Ce score n'est pas valide",
+      nothingToValidate: 'Aucun résultat en attente de validation',
+      cannotDispute: 'Aucun résultat à contester',
+      nextMatchStarted: 'Le match suivant du vainqueur a commencé : ce résultat ne peut plus changer',
+      stale: 'Le match a changé entre-temps : rechargez-le et réessayez',
+    },
     draws: {
       formatUnsupported: "Seuls les tableaux à élimination directe peuvent être tirés pour l'instant",
       alreadyPublished: 'Le tableau est publié : réinitialisez-le avant un nouveau tirage',
@@ -333,6 +352,18 @@ export const fr: Messages = {
     OTHER: 'Autre raison',
   },
   notifications: {
+    tournamentMatchScheduled: {
+      title: 'Match programmé',
+      body: '{eventName} · {name} : {slot} sur {court}.',
+    },
+    tournamentMatchResult: {
+      title: 'Résultat enregistré',
+      body: '{eventName} · {name} : {score}.',
+    },
+    tournamentMatchPostponed: {
+      title: 'Match reporté',
+      body: '{eventName} · {name} : votre match est reporté ({reason}). Un nouvel horaire suivra.',
+    },
     drawPublished: {
       title: 'Le tableau est publié',
       body: 'Découvrez votre adversaire en {eventName} · {name}.',

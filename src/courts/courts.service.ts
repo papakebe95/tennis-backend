@@ -1,3 +1,4 @@
+import { matchBlocks, overlaps } from '../admin/tournaments/court-occupancy.js';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { BookingStatus, CourtStatus, OrganizationStatus } from '@prisma/client';
 import { hourlySlots, parseOpeningHours, windowsFor } from '../clubs/opening-hours.js';
@@ -16,6 +17,8 @@ export interface AvailabilitySlot {
   end: string;
   available: boolean;
   bookedBy?: AvailabilitySlotBookedBy;
+  /** Name of the tournament playing on the court then. */
+  tournament?: string;
 }
 
 export interface CourtAvailability {
@@ -83,16 +86,21 @@ export class CourtsService {
       },
     });
 
+    // Tournament matches scheduled on the court take it too.
+    const blocks = await matchBlocks(this.prisma, { courtIds: [courtId] }, windowStart, windowEnd);
+
     const slots: AvailabilitySlot[] = [];
     for (const { start, end } of hourSlots) {
       const occupyingBooking = bookings.find(
         (booking) => booking.startTime < end && booking.endTime > start,
       );
+      const tournament = blocks.find((b) => overlaps(b.start, b.end, start, end));
 
       const slot: AvailabilitySlot = {
         start: start.toISOString(),
         end: end.toISOString(),
-        available: !occupyingBooking,
+        available: !occupyingBooking && !tournament,
+        ...(tournament ? { tournament: tournament.competitionName } : {}),
       };
 
       if (occupyingBooking) {

@@ -48,6 +48,8 @@ describe('bookings', () => {
         findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue(booked(start)),
       },
+      // No tournament match on the court.
+      competitionMatch: { findMany: vi.fn().mockResolvedValue([]) },
     };
     const service = new BookingsService(prisma as never, notifications as never);
 
