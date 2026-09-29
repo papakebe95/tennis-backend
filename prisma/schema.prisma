@@ -37,6 +37,29 @@ enum RoleScope {
   COMPETITION
 }
 
+enum MemberStatus {
+  ACTIVE
+  SUSPENDED
+  // Left the club; kept for history.
+  LEFT
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentPurpose {
+  MEMBERSHIP
+  TOURNAMENT_ENTRY
+  BOOKING
+  COACHING
+  OTHER
+}
+
 enum AffiliationStatus {
   // Requested by the club, awaiting the federation.
   PENDING
@@ -256,6 +279,9 @@ model User {
   roles                  UserRole[]      @relation("UserRoleUser")
   accessRequests         AccessRequest[] @relation("AccessRequestApplicant")
   accessRequestsReviewed AccessRequest[] @relation("AccessRequestReviewer")
+  clubMemberships        ClubMember[]
+  paymentsMade           Payment[]       @relation("PaymentPayer")
+  paymentsRecorded       Payment[]       @relation("PaymentRecorder")
   rolesGranted           UserRole[]      @relation("UserRoleGrantedBy")
   auditLogs              AuditLog[]
 
@@ -361,6 +387,7 @@ model Organization {
   // Affiliations where this organization is the member (club) or the
   // parent (federation).
   memberships    OrganizationAffiliation[] @relation("AffiliationMember")
+  payments       Payment[]
   affiliations   OrganizationAffiliation[] @relation("AffiliationParent")
 
   @@index([type, status])
@@ -564,12 +591,14 @@ model Club {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  city         City          @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  courts       Court[]
-  bookings     Booking[]
-  competitions Competition[]
-  matches      Match[]
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  city            City             @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  courts          Court[]
+  bookings        Booking[]
+  competitions    Competition[]
+  matches         Match[]
+  members         ClubMember[]
+  membershipPlans MembershipPlan[]
 
   // Lets Court reference (id, cityId) so a court's city can never differ from
   // its club's city — see Court.club.
@@ -607,6 +636,132 @@ model Court {
 
   @@index([clubId])
   @@index([cityId])
+}
+
+// ---------------------------------------------------------------------------
+// Club membership & payments
+// ---------------------------------------------------------------------------
+
+// What a club sells: "Annual", "Quarterly", "Junior"…
+model MembershipPlan {
+  id             String   @id @default(cuid())
+  clubId         String
+  name           String
+  description    String?
+  durationMonths Int
+  price          Decimal  @db.Decimal(12, 2)
+  currency       String   @default("XOF")
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@unique([clubId, name])
+}
+
+// A person's membership of a club (one per club), across renewals.
+model ClubMember {
+  id                  String       @id @default(cuid())
+  clubId              String
+  userId              String
+  // Club-issued number, stable across renewals ("000123").
+  membershipNumber    String
+  status              MemberStatus @default(ACTIVE)
+  statusReason        String?
+  notes               String?
+  joinedAt            DateTime     @default(now())
+  // The latest period (denormalized so the member list can filter on it).
+  currentMembershipId String?      @unique
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  club              Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periods           Membership[] @relation("MemberPeriods")
+  currentMembership Membership?  @relation("CurrentPeriod", fields: [currentMembershipId], references: [id], onDelete: SetNull)
+
+  @@unique([clubId, userId])
+  @@unique([clubId, membershipNumber])
+  @@index([clubId, status])
+}
+
+// One period of membership (on joining, then each renewal). amountPaid and
+// fullyPaid follow its PAID payments, updated in the same transaction, so the
+// member list can filter on payment status.
+model Membership {
+  id         String   @id @default(cuid())
+  memberId   String
+  planId     String?
+  startsAt   DateTime
+  expiresAt  DateTime
+  // Price agreed for this period (the plan's price at the time).
+  priceDue   Decimal  @db.Decimal(12, 2)
+  currency   String   @default("XOF")
+  amountPaid Decimal  @default(0) @db.Decimal(12, 2)
+  fullyPaid  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  member    ClubMember      @relation("MemberPeriods", fields: [memberId], references: [id], onDelete: Cascade)
+  currentOf ClubMember?     @relation("CurrentPeriod")
+  plan      MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  payments  Payment[]
+
+  @@index([memberId, startsAt])
+  @@index([expiresAt])
+}
+
+// Configurable payment methods (cash, mobile money, card…). Online providers
+// plug in later through `provider`; nothing is hard-coded.
+model PaymentMethod {
+  key       String  @id
+  label     String
+  // Integration used for online collection (null: recorded manually).
+  provider  String?
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  payments Payment[]
+}
+
+// Money received by an organization (or refunded), linked to what it pays for.
+model Payment {
+  id                String         @id @default(cuid())
+  reference         String         @unique
+  organizationId    String
+  purpose           PaymentPurpose
+  status            PaymentStatus  @default(PAID)
+  amount            Decimal        @db.Decimal(12, 2)
+  currency          String         @default("XOF")
+  methodKey         String
+  // Mobile-money transaction id, cheque number…
+  externalReference String?
+  payerId           String?
+  // Walk-in payer without an account.
+  payerName         String?
+  paidAt            DateTime?
+  notes             String?
+  recordedById      String?
+  refundedAt        DateTime?
+  refundReason      String?
+  membershipId      String?
+  bookingId         String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  method       PaymentMethod @relation(fields: [methodKey], references: [key], onDelete: Restrict)
+  payer        User?         @relation("PaymentPayer", fields: [payerId], references: [id], onDelete: SetNull)
+  recordedBy   User?         @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  membership   Membership?   @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  booking      Booking?      @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, paidAt])
+  @@index([organizationId, status])
+  @@index([membershipId])
+  @@index([bookingId])
 }
 
 // Weekly opening windows of one court (weekday 0 = Monday … 6 = Sunday,
@@ -661,10 +816,14 @@ model Booking {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  court  Court   @relation(fields: [courtId], references: [id], onDelete: Restrict)
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club   Club?   @relation(fields: [clubId], references: [id], onDelete: SetNull)
-  clubId String?
+  court        Court     @relation(fields: [courtId], references: [id], onDelete: Restrict)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club         Club?     @relation(fields: [clubId], references: [id], onDelete: SetNull)
+  clubId       String?
+  // Set when a club cancels it from the back-office.
+  cancelledAt  DateTime?
+  cancelReason String?
+  payments     Payment[]
 
   @@index([courtId])
   @@index([userId])

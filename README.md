@@ -269,6 +269,29 @@ Rules enforced server-side:
 - **Courts are archived, never deleted.** Bookings reference them with `ON DELETE RESTRICT`, so history is kept.
 - **Club descriptions are edited per language:** a French request (`lang: fr`) updates the French translation and leaves the English column unchanged.
 
+### Members, payments and club bookings
+
+| Area | Endpoints | Permission (on the club) |
+|---|---|---|
+| Plans | `GET/POST /admin/clubs/:id/membership-plans`, `PATCH /admin/membership-plans/:planId` | `member.view`, `membership.plan.manage` |
+| Members | `GET /admin/clubs/:id/members` (`?format=csv`), `GET /admin/clubs/:id/member-candidates?q=`, `POST /admin/clubs/:id/members`, `GET/PATCH /admin/members/:memberId`, `PATCH …/status`, `POST …/renew` | `member.view`, `member.manage` |
+| Payments | `GET /admin/payments` (scoped; `?organizationId`, `?format=csv`), `GET /admin/payments/methods`, `POST /admin/clubs/:id/payments`, `POST /admin/payments/:paymentId/refund` | `payment.view`, `payment.record`, `payment.refund` |
+| Bookings | `GET /admin/clubs/:id/bookings`, `POST /admin/bookings/:bookingId/cancel` | `booking.view`, `booking.manage` |
+| Dashboards | `GET /admin/clubs/:id/dashboard`, `GET /admin/federations/:id/players` | `club.dashboard.view`, `federation.players.view` |
+
+- **Members:** a `ClubMember` (one per person per club, with a stable number) has membership periods (`Membership`), one per join or renewal. Each period records the price agreed at the time.
+- **Payment status** is derived from the current period:
+  - `EXPIRED`: the period has ended
+  - `PAID`: fully paid
+  - `OVERDUE`: not fully paid, and started more than 30 days ago
+  - `PARTIALLY_PAID`: something paid, within the 30 days
+  - `PENDING`: nothing paid yet, within the 30 days
+
+  `Membership.amountPaid` and `fullyPaid` are recomputed from PAID payments in the same transaction as each payment or refund, so the member list can filter on them.
+- **Payments** belong to an organization and are linked to what they pay for (membership period or booking). The API checks that the target belongs to the club and refuses to take more than what remains due; the period row is locked while it checks. Refunds keep the payment row (`REFUNDED`).
+- **Payment methods** live in the `PaymentMethod` table: cash, Wave, Orange Money, Free Money, card, bank transfer. Online providers plug in later through `provider`.
+- **Adding a member** needs an existing player account. Club staff search by phone or name and see masked phone numbers.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

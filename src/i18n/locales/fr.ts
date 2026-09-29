@@ -62,6 +62,7 @@ export const fr: Messages = {
       endBeforeStart: 'endTime doit être postérieur à startTime',
       startInPast: 'startTime doit être dans le futur',
       outsideHours: 'Le court est fermé à cette heure',
+      alreadyCancelled: 'Cette réservation est déjà annulée',
       slotTaken: 'Ce court est déjà réservé pour la plage horaire demandée',
       cannotCancel:
         'Impossible d’annuler une réservation déjà commencée ou passée',
@@ -102,6 +103,25 @@ export const fr: Messages = {
         'Seul le joueur qui a enregistré le match peut le supprimer',
     },
     notifications: { notFound: 'Notification introuvable' },
+    members: {
+      notFound: 'Membre introuvable',
+      userNotFound: 'Aucun compte avec ce numéro de téléphone',
+      alreadyMember: 'Cette personne est déjà membre du club',
+      numberTaken: 'Ce numéro de membre est déjà utilisé',
+      planNotFound: 'Formule d’adhésion introuvable',
+      planInactive: 'Cette formule n’est plus proposée',
+      planNameTaken: 'Une formule porte déjà ce nom',
+      left: 'Ce membre a quitté le club',
+      noChange: 'Le membre a déjà ce statut',
+    },
+    payments: {
+      notFound: 'Paiement introuvable',
+      methodInactive: 'Ce moyen de paiement n’est pas disponible',
+      targetRequired: 'Indiquez ce que règle ce paiement',
+      targetMismatch: 'Cette adhésion ou réservation n’appartient pas à ce club',
+      overpay: 'Le montant dépasse le reste à payer ({remaining})',
+      notRefundable: 'Seuls les paiements encaissés peuvent être remboursés',
+    },
     admin: {
       cannotChangeOwnStatus: 'Vous ne pouvez pas modifier le statut de votre propre compte',
       cannotResetOwnPassword: 'Utilisez « Changer le mot de passe » pour votre propre compte',

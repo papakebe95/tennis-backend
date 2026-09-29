@@ -8,6 +8,17 @@ import { NotificationsModule } from '../notifications/notifications.module.js';
 import { AuditLogsController, DashboardController, LookupsController } from './admin.controllers.js';
 import { AuditLogsService } from './audit-logs/audit-logs.service.js';
 import { DashboardService } from './dashboard/dashboard.service.js';
+import { ClubOpsService } from './members/club-ops.service.js';
+import {
+  BookingsAdminController,
+  ClubMembersController,
+  FederationPlayersController,
+  MembersController,
+  MembershipPlansController,
+  PaymentsController,
+} from './members/members.controller.js';
+import { MembersService } from './members/members.service.js';
+import { PaymentsService } from './members/payments.service.js';
 import { ClubsAdminService } from './organizations/clubs-admin.service.js';
 import {
   ClubsAdminController,
@@ -37,6 +48,12 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     FederationsController,
     ClubsAdminController,
     CourtsAdminController,
+    ClubMembersController,
+    MembersController,
+    MembershipPlansController,
+    PaymentsController,
+    BookingsAdminController,
+    FederationPlayersController,
   ],
   providers: [
     AdminUsersService,
@@ -47,6 +64,9 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     AuditLogsService,
     OrganizationsService,
     ClubsAdminService,
+    MembersService,
+    PaymentsService,
+    ClubOpsService,
   ],
   exports: [AccessRequestsService, RoleGrantsService],
 })

@@ -175,6 +175,8 @@ export async function seedBackOffice(prisma: PrismaClient) {
     });
   }
 
+  await seedMembership(prisma, clubs.slice(0, 2).map((c) => c.organizationId), superAdminId);
+
   // Access requests, so the review screens have something to show. Rebuilt on
   // every run for the seeded applicants.
   const firstCity = await prisma.city.findFirst({ orderBy: { name: 'asc' } });
@@ -229,4 +231,196 @@ export async function seedBackOffice(prisma: PrismaClient) {
   console.log(
     `Seeded back-office: ${ACCOUNTS.length} dev accounts (password "${DEV_PASSWORD}"), ${grantCount} grants, federation + community`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Members, plans, payments and bookings for the first two clubs, covering
+// every membership payment state. Only the sample players below are touched.
+// ---------------------------------------------------------------------------
+
+const SAMPLE_PLAYERS = [
+  ['Seynabou', 'Diagne', 'INTERMEDIATE'],
+  ['Babacar', 'Sy', 'ADVANCED'],
+  ['Ndeye', 'Mbaye', 'BEGINNER'],
+  ['Ousmane', 'Sarr', 'INTERMEDIATE'],
+  ['Khadija', 'Toure', 'ADVANCED'],
+  ['Lamine', 'Gaye', 'BEGINNER'],
+  ['Adama', 'Cisse', 'INTERMEDIATE'],
+  ['Rokhaya', 'Fall', 'EXPERT'],
+  ['Ibou', 'Ndour', 'INTERMEDIATE'],
+  ['Mame', 'Diouf', 'BEGINNER'],
+] as const;
+
+const DAY = 24 * 60 * 60 * 1000;
+const daysAgo = (n: number) => {
+  const d = new Date(Date.now() - n * DAY);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+};
+const addMonthsUtc = (date: Date, months: number) => {
+  const d = new Date(date);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return d;
+};
+const reference = (i: number) => `PAY-SEED-${String(i).padStart(4, '0')}`;
+
+async function seedMembership(prisma: PrismaClient, clubOrgIds: string[], recorderId: string | null) {
+  const passwordHash = await bcrypt.hash('password123', 10);
+  const players = [];
+  for (const [index, [firstname, lastname, level]] of SAMPLE_PLAYERS.entries()) {
+    const msisdn = `+2217700002${String(index).padStart(2, '0')}`;
+    const email = `${firstname}.${lastname}@members.example`.toLowerCase();
+    const user = await prisma.user.upsert({
+      where: { msisdn },
+      update: { firstname, lastname, email },
+      create: { msisdn, email, firstname, lastname, passwordHash },
+    });
+    await prisma.playerProfile.upsert({
+      where: { userId: user.id },
+      update: { level },
+      create: { userId: user.id, level, city: 'Dakar' },
+    });
+    players.push(user);
+  }
+  const playerIds = players.map((p) => p.id);
+
+  // Reset what the previous run created for these players.
+  await prisma.payment.deleteMany({ where: { payerId: { in: playerIds } } });
+  await prisma.payment.deleteMany({ where: { reference: { startsWith: 'PAY-SEED-' } } });
+  await prisma.booking.deleteMany({ where: { userId: { in: playerIds } } });
+  await prisma.clubMember.deleteMany({ where: { userId: { in: playerIds } } });
+
+  let paymentIndex = 0;
+  let members = 0;
+  for (const [clubIndex, orgId] of clubOrgIds.entries()) {
+    const club = await prisma.club.findUnique({ where: { organizationId: orgId }, include: { courts: { where: { archivedAt: null }, orderBy: { number: 'asc' } } } });
+    if (!club) continue;
+    const plans = {
+      annual: await prisma.membershipPlan.upsert({
+        where: { clubId_name: { clubId: club.id, name: 'Annuel' } },
+        update: {},
+        create: { clubId: club.id, name: 'Annuel', description: 'Accès illimité aux courts pendant un an', durationMonths: 12, price: 60000 },
+      }),
+      quarterly: await prisma.membershipPlan.upsert({
+        where: { clubId_name: { clubId: club.id, name: 'Trimestriel' } },
+        update: {},
+        create: { clubId: club.id, name: 'Trimestriel', durationMonths: 3, price: 20000 },
+      }),
+      junior: await prisma.membershipPlan.upsert({
+        where: { clubId_name: { clubId: club.id, name: 'Junior (-18 ans)' } },
+        update: {},
+        create: { clubId: club.id, name: 'Junior (-18 ans)', durationMonths: 12, price: 30000 },
+      }),
+    };
+
+    // [player, plan, started days ago, paid, method, status]
+    const scenarios: [number, keyof typeof plans, number, number, string, 'ACTIVE' | 'SUSPENDED'][] =
+      clubIndex === 0
+        ? [
+            [0, 'annual', 60, 60000, 'CASH', 'ACTIVE'], // PAID
+            [1, 'annual', 10, 20000, 'WAVE', 'ACTIVE'], // PARTIALLY_PAID
+            [2, 'quarterly', 5, 0, 'CASH', 'ACTIVE'], // PENDING
+            [3, 'annual', 45, 0, 'CASH', 'ACTIVE'], // OVERDUE
+            [4, 'quarterly', 120, 20000, 'ORANGE_MONEY', 'ACTIVE'], // EXPIRED
+            [5, 'junior', 30, 30000, 'ORANGE_MONEY', 'ACTIVE'], // PAID
+            [6, 'annual', 90, 30000, 'WAVE', 'SUSPENDED'], // suspended, overdue balance
+          ]
+        : [
+            [7, 'annual', 200, 60000, 'BANK_TRANSFER', 'ACTIVE'],
+            [8, 'quarterly', 20, 10000, 'WAVE', 'ACTIVE'],
+            [9, 'junior', 400, 30000, 'CASH', 'ACTIVE'], // EXPIRED
+            [1, 'quarterly', 3, 0, 'CASH', 'ACTIVE'],
+          ];
+
+    for (const [number, [playerIndex, planKey, startedDaysAgo, paid, method, status]] of scenarios.entries()) {
+      const plan = plans[planKey];
+      const startsAt = daysAgo(startedDaysAgo);
+      const member = await prisma.clubMember.create({
+        data: {
+          clubId: club.id,
+          userId: players[playerIndex].id,
+          membershipNumber: String(number + 1).padStart(6, '0'),
+          joinedAt: startsAt,
+          status,
+          statusReason: status === 'SUSPENDED' ? 'Cotisation impayée' : null,
+        },
+      });
+      const period = await prisma.membership.create({
+        data: {
+          memberId: member.id,
+          planId: plan.id,
+          startsAt,
+          expiresAt: addMonthsUtc(startsAt, plan.durationMonths),
+          priceDue: plan.price,
+          amountPaid: paid,
+          fullyPaid: paid >= Number(plan.price),
+        },
+      });
+      await prisma.clubMember.update({ where: { id: member.id }, data: { currentMembershipId: period.id } });
+      if (paid > 0) {
+        await prisma.payment.create({
+          data: {
+            reference: reference(++paymentIndex),
+            organizationId: orgId,
+            purpose: 'MEMBERSHIP',
+            amount: paid,
+            methodKey: method,
+            externalReference: method === 'CASH' ? null : `TX${100000 + paymentIndex}`,
+            payerId: players[playerIndex].id,
+            paidAt: new Date(startsAt.getTime() + 2 * 60 * 60 * 1000),
+            recordedById: recorderId,
+            membershipId: period.id,
+          },
+        });
+      }
+      members++;
+    }
+
+    // Bookings: yesterday, today and the next days, some paid at the desk.
+    const court = (i: number) => club.courts[i % Math.max(club.courts.length, 1)];
+    if (!club.courts.length) continue;
+    const slot = (dayOffset: number, hour: number) => {
+      const d = daysAgo(-dayOffset);
+      d.setUTCHours(hour, 0, 0, 0);
+      return d;
+    };
+    const bookings: [number, number, number, number, boolean][] = [
+      // [player, court, day offset, hour, paid]
+      [0, 1, -1, 10, true],
+      [1, 1, 0, 18, true],
+      [2, 1, 0, 19, false],
+      [3, 0, 1, 18, false],
+      [5, 1, 1, 9, true],
+      [6, 2, 3, 10, false],
+    ];
+    for (const [playerIndex, courtIndex, dayOffset, hour, isPaid] of bookings) {
+      const c = court(courtIndex + clubIndex);
+      const booking = await prisma.booking.create({
+        data: {
+          courtId: c.id,
+          clubId: club.id,
+          userId: players[(playerIndex + clubIndex * 7) % players.length].id,
+          startTime: slot(dayOffset, hour),
+          endTime: slot(dayOffset, hour + 1),
+          status: 'CONFIRMED',
+          price: c.pricePerHour,
+        },
+      });
+      if (isPaid && c.pricePerHour) {
+        await prisma.payment.create({
+          data: {
+            reference: reference(++paymentIndex),
+            organizationId: orgId,
+            purpose: 'BOOKING',
+            amount: c.pricePerHour,
+            methodKey: 'CASH',
+            payerId: booking.userId,
+            paidAt: slot(dayOffset, hour),
+            recordedById: recorderId,
+            bookingId: booking.id,
+          },
+        });
+      }
+    }
+  }
+  console.log(`Seeded membership: ${players.length} sample players, ${members} members, ${paymentIndex} payments`);
 }

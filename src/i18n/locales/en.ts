@@ -64,6 +64,7 @@ export const en = {
       endBeforeStart: 'endTime must be after startTime',
       startInPast: 'startTime must be in the future',
       outsideHours: 'The court is closed at that time',
+      alreadyCancelled: 'This booking is already cancelled',
       slotTaken: 'This court is already booked for the requested time range',
       cannotCancel:
         'Cannot cancel a booking that has already started or passed',
@@ -102,6 +103,25 @@ export const en = {
       onlyRecorderDeletes: 'Only the player who recorded it can delete a match',
     },
     notifications: { notFound: 'Notification not found' },
+    members: {
+      notFound: 'Member not found',
+      userNotFound: 'No account with this phone number',
+      alreadyMember: 'This person is already a member of the club',
+      numberTaken: 'This membership number is already used',
+      planNotFound: 'Membership plan not found',
+      planInactive: 'This membership plan is no longer offered',
+      planNameTaken: 'A plan with this name already exists',
+      left: 'This member has left the club',
+      noChange: 'The member already has this status',
+    },
+    payments: {
+      notFound: 'Payment not found',
+      methodInactive: 'This payment method is not available',
+      targetRequired: 'Choose what this payment is for',
+      targetMismatch: 'This membership or booking does not belong to this club',
+      overpay: 'The amount exceeds what remains due ({remaining})',
+      notRefundable: 'Only paid payments can be refunded',
+    },
     admin: {
       cannotChangeOwnStatus: "You can't change the status of your own account",
       cannotResetOwnPassword: "Use 'Change password' for your own account",

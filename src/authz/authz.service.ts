@@ -13,7 +13,15 @@ import type { PermissionKey } from './permissions.js';
 import { GLOBAL_SCOPE, holds, type Grant, type Scope } from './scope.js';
 
 /** Resource kinds a permission check can be anchored on. */
-export type ResourceType = 'organization' | 'club' | 'court' | 'competition';
+export type ResourceType =
+  | 'organization'
+  | 'club'
+  | 'court'
+  | 'competition'
+  | 'member'
+  | 'membershipPlan'
+  | 'payment'
+  | 'booking';
 
 const org = (id: string): Scope => ({ type: RoleScope.ORGANIZATION, id });
 
@@ -82,6 +90,29 @@ export class AuthzService implements OnApplicationBootstrap {
         if (!row) throw notFound();
         return [org(row.club.organizationId), GLOBAL_SCOPE];
       }
+      case 'member': {
+        const row = await this.prisma.clubMember.findUnique({ where: { id }, select: { club: { select: { organizationId: true } } } });
+        if (!row) throw notFound();
+        return [org(row.club.organizationId), GLOBAL_SCOPE];
+      }
+      case 'membershipPlan': {
+        const row = await this.prisma.membershipPlan.findUnique({ where: { id }, select: { club: { select: { organizationId: true } } } });
+        if (!row) throw notFound();
+        return [org(row.club.organizationId), GLOBAL_SCOPE];
+      }
+      case 'payment': {
+        const row = await this.prisma.payment.findUnique({ where: { id }, select: { organizationId: true } });
+        if (!row) throw notFound();
+        return [org(row.organizationId), GLOBAL_SCOPE];
+      }
+      case 'booking': {
+        const row = await this.prisma.booking.findUnique({
+          where: { id },
+          select: { court: { select: { club: { select: { organizationId: true } } } } },
+        });
+        if (!row) throw notFound();
+        return [org(row.court.club.organizationId), GLOBAL_SCOPE];
+      }
       case 'competition': {
         const row = await this.prisma.competition.findUnique({
           where: { id },
@@ -120,7 +151,9 @@ export class AuthzService implements OnApplicationBootstrap {
       }),
       this.prisma.userRole.findMany({
         where: activeGrantWhere(userId),
-        orderBy: { grantedAt: 'asc' },
+        // Stable order (grants made together share a timestamp): the first
+        // one decides the back-office's default workspace.
+        orderBy: [{ grantedAt: 'asc' }, { id: 'asc' }],
         select: {
           id: true,
           grantedAt: true,
