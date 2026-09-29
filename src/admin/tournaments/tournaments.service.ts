@@ -441,6 +441,14 @@ export class TournamentsService {
           ...(dto.to === CompetitionStatus.CANCELLED ? { cancelledAt: now, cancelReason: dto.reason } : {}),
         },
       });
+      // Play starts: published draws freeze. Later changes go through
+      // fill / replace, which need draw.modify_locked.
+      if (dto.to === CompetitionStatus.IN_PROGRESS) {
+        await tx.competitionEvent.updateMany({
+          where: { competitionId: id, drawStatus: DrawStatus.PUBLISHED },
+          data: { drawStatus: DrawStatus.LOCKED, drawLockedAt: now, drawVersion: { increment: 1 } },
+        });
+      }
       await this.audit.record(
         {
           actorId,

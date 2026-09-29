@@ -93,6 +93,29 @@ export const en = {
       notEligible: "You aren't eligible for any table of this tournament (classification, age or gender)",
       rejected: 'Your registration for this tournament was declined',
     },
+    draws: {
+      formatUnsupported: 'Only single-elimination draws can be generated for now',
+      alreadyPublished: 'The draw is published: reset it before drawing again',
+      notGenerated: 'The draw has not been generated yet',
+      notDraft: 'Only a draft draw can be published',
+      notPublished: 'Only a published draw can be locked',
+      locked: 'The draw is locked: fill or replace places instead',
+      lockedForbidden: 'Changing a locked draw needs the right to modify locked draws',
+      playStarted: 'Play has started: the draw can no longer be generated',
+      tooFew: 'A draw needs at least 2 players or places',
+      tooMany: 'A draw holds at most 128 players',
+      sizeTooSmall: 'This draw size is too small for the entries',
+      slotNotFound: 'Draw place not found',
+      slotNotOpen: 'Only a qualifier or empty place can be filled',
+      slotNotEntry: 'There is no player on this place to replace',
+      matchStarted: 'This match has already started',
+      playerEliminated: 'This player is already out of the draw',
+      entryNotAvailable: 'This entry is not available (not accepted, or already in the draw)',
+      entrantRequired: 'Choose a player',
+      alreadyInDraw: 'This player is already in the draw',
+      stale: 'The draw changed in the meantime: reload it and try again',
+      entryInDraw: 'This player is in the draw: replace them from the draw instead',
+    },
     tournaments: {
       notFound: 'Tournament not found',
       eventNotFound: 'Table not found',
@@ -312,6 +335,22 @@ export const en = {
     OTHER: 'Other reason',
   },
   notifications: {
+    drawPublished: {
+      title: 'The draw is out',
+      body: 'See who you play in {eventName} · {name}.',
+    },
+    drawPlaced: {
+      title: "You're in the draw",
+      body: 'You have a place in {eventName} · {name}. Check your first match.',
+    },
+    drawReplacedOut: {
+      title: 'Replaced in the draw',
+      body: 'You were replaced in {eventName} · {name}: {reason}',
+    },
+    drawOpponentChanged: {
+      title: 'New opponent',
+      body: 'Your next opponent in {eventName} · {name} has changed.',
+    },
     registrationReceived: {
       title: 'Registration received',
       body: 'Your registration for {name} has been received. The organizer will confirm it.',

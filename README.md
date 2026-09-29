@@ -318,6 +318,31 @@ Rules enforced server-side:
   - Capacity and seeds are checked under a row lock on the table.
 - **Hosting:** creating a tournament for an organization needs both `tournament.create` and `tournament.update` there. An independent organizer (global `tournament.create` only) can't put a club's name on a tournament. The creator gets `COMPETITION_ORGANIZER` on it when they couldn't run it otherwise.
 
+### Draws
+
+| Endpoints (`:id` = table) | Permission |
+|---|---|
+| `GET /admin/events/:id/draw` | `draw.view` |
+| `GET …/draw/candidates`, `POST …/draw/generate`, `POST …/draw/reset`, `POST …/draw/swap {a, b, version}` | `draw.manage` |
+| `POST …/draw/publish`, `POST …/draw/lock` | `draw.publish` |
+| `POST …/draw/slots/:position/fill`, `POST …/draw/slots/:position/replace` | `draw.manage`, plus `draw.modify_locked` and a reason on a locked draw |
+| `GET /competitions/:id/draws` (player app) | signed in; published and locked draws only |
+
+- **Engine** (`src/admin/tournaments/draw-engine.ts`, pure and unit-tested):
+  - Single elimination, sizes 2–128 (next power of two, or bigger on request).
+  - Seeds go on the standard lines: 1 at the top, 2 at the bottom, 3–4 then 5–8… drawn by lot inside their lines. Byes go opposite the best seeds first.
+  - Reserved places are drawn like unseeded players, never opposite a bye.
+  - Every generation stores a random `drawSeed`, so the draw can be replayed and checked.
+- **Places** (`DrawSlot`): `ENTRY`, `BYE`, `QUALIFIER` (labelled Q1, Q2…, with the lower table they come from) or `EMPTY`. By default a draw reserves one Q place per qualifier the lower tables still have to send.
+- **States:**
+  - `DRAFT`: draw again, swap places, reset.
+  - `PUBLISHED`: players see it (and are notified); swaps still allowed.
+  - `LOCKED`: set when the tournament starts (or by hand). Only filling places and replacing players, with `draw.modify_locked` and a reason.
+  - Swaps carry the `drawVersion` the screen showed; a stale one gets `409 DRAW_VERSION_CONFLICT`.
+- **Filling a place** puts an accepted entry, a pending one (accepted on the way), or a player from a lower table (entered as `QUALIFIER`) on a reserved place. Eligibility and overrides work as for entries.
+- **Replacing a player** is allowed until their next match starts. The player leaves as `WITHDRAWN` with the reason, and the player, the newcomer and the opponent are notified. Someone who hasn't played yet is replaced on the draw itself. Someone who already won a match is replaced only in the match they're due to play.
+- A placed entry can't be withdrawn or waitlisted from the entries screen (`ENTRY_IN_DRAW`): it leaves through a replacement.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

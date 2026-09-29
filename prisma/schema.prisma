@@ -273,10 +273,25 @@ enum StoryKind {
 }
 
 enum CompetitionMatchStatus {
+  // Waiting for a side: a feeder match, or a draw place still to fill.
+  PENDING
+  // Both sides known, not scheduled yet.
+  READY
   SCHEDULED
   LIVE
   COMPLETED
+  // One side is a bye: the other advances without playing.
   BYE
+}
+
+// What a first-round draw position holds.
+enum DrawSlotKind {
+  ENTRY
+  BYE
+  // Reserved for a player coming up from a lower table ("Q1").
+  QUALIFIER
+  // Left open, filled by hand later (e.g. the best of a lower table).
+  EMPTY
 }
 
 enum ProductCondition {
@@ -1114,6 +1129,14 @@ model CompetitionEvent {
   qualifierCount       Int               @default(0)
   tableOrder           Int               @default(0)
   drawStatus           DrawStatus        @default(NOT_GENERATED)
+  // Draw: size (power of two), random seed of the last generation (so a
+  // draw can be reproduced and audited) and a version for concurrent edits.
+  drawSize             Int?
+  drawSeed             String?
+  drawGeneratedAt      DateTime?
+  drawPublishedAt      DateTime?
+  drawLockedAt         DateTime?
+  drawVersion          Int               @default(0)
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
 
@@ -1124,6 +1147,9 @@ model CompetitionEvent {
   feederEvents       CompetitionEvent[]       @relation("SuccessiveTables")
   entries            CompetitionParticipant[]
   qualifiedEntries   CompetitionParticipant[] @relation("EntrySourceEvent")
+  drawSlots          DrawSlot[]
+  qualifierSlots     DrawSlot[]               @relation("DrawSlotSource")
+  rounds             CompetitionRound[]
 
   @@index([competitionId, tableOrder])
 }
@@ -1175,6 +1201,7 @@ model CompetitionParticipant {
   user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   partner     User?             @relation("ParticipantPartner", fields: [partnerUserId], references: [id], onDelete: SetNull)
   decidedBy   User?             @relation("ParticipantDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  drawSlot    DrawSlot?
 
   matchesAsParticipant1 CompetitionMatch[] @relation("CompetitionMatchParticipant1")
   matchesAsParticipant2 CompetitionMatch[] @relation("CompetitionMatchParticipant2")
@@ -1185,16 +1212,44 @@ model CompetitionParticipant {
   @@index([eventId, status])
 }
 
+// A round of one event's bracket; `orderIndex` is 1 for the first round.
 model CompetitionRound {
   id            String @id @default(cuid())
   competitionId String
+  eventId       String
   name          String
   orderIndex    Int
 
   competition Competition        @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event       CompetitionEvent   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   matches     CompetitionMatch[]
 
+  @@unique([eventId, orderIndex])
   @@index([competitionId])
+}
+
+// One first-round position of an event's draw (0 … drawSize-1). Positions
+// 2p and 2p+1 meet in first-round match p.
+model DrawSlot {
+  id            String       @id @default(cuid())
+  eventId       String
+  position      Int
+  kind          DrawSlotKind
+  participantId String?      @unique
+  // Label of a reserved place ("Q1").
+  label         String?
+  // For QUALIFIER places: the lower table the player will come from.
+  sourceEventId String?
+  filledAt      DateTime?
+  filledById    String?
+
+  event       CompetitionEvent        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // NoAction: checked at the end of the statement, so deleting a whole
+  // tournament cascades, but a placed entry can't vanish from a live draw.
+  participant CompetitionParticipant? @relation(fields: [participantId], references: [id], onDelete: NoAction)
+  sourceEvent CompetitionEvent?       @relation("DrawSlotSource", fields: [sourceEventId], references: [id], onDelete: SetNull)
+
+  @@unique([eventId, position])
 }
 
 // Detailed set-by-set scoring for a CompetitionMatch is not duplicated here:
@@ -1204,10 +1259,14 @@ model CompetitionRound {
 model CompetitionMatch {
   id             String                 @id @default(cuid())
   roundId        String
+  // 0-based index within the round: deterministic layout.
+  position       Int                    @default(0)
+  // 1 or 2: which side of `nextMatch` the winner fills.
+  nextSlot       Int?
   participant1Id String?
   participant2Id String?
   winnerId       String?
-  status         CompetitionMatchStatus @default(SCHEDULED)
+  status         CompetitionMatchStatus @default(PENDING)
   scheduledAt    DateTime?
   courtId        String?
   nextMatchId    String?
@@ -1227,7 +1286,7 @@ model CompetitionMatch {
 
   linkedMatch Match? @relation(fields: [linkedMatchId], references: [id], onDelete: SetNull)
 
-  @@index([roundId])
+  @@unique([roundId, position])
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ import {
 import {
   CompetitionStatus,
   CompetitionVisibility,
+  DrawStatus,
   EventDiscipline,
   Prisma,
   RegistrationStatus,
@@ -253,6 +254,84 @@ export class CompetitionsService {
       data: { status: RegistrationStatus.WITHDRAWN, decidedAt: new Date(), decidedById: userId, seed: null },
     });
     return this.findOne(userId, id);
+  }
+
+  /**
+   * Published (or locked) draws of a tournament, for the app's draw screen:
+   * one bracket per table, with players' names, seeds, byes and places still
+   * to fill ("Q1"). Unpublished draws stay hidden.
+   */
+  async draws(userId: string, id: string) {
+    const competition = await this.prisma.competition.findFirst({
+      where: { id, ...VISIBLE },
+      select: {
+        id: true,
+        events: {
+          where: { drawStatus: { in: [DrawStatus.PUBLISHED, DrawStatus.LOCKED] } },
+          orderBy: [{ tableOrder: 'asc' }, { createdAt: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            drawSize: true,
+            drawSlots: { select: { position: true, kind: true, label: true } },
+            rounds: {
+              orderBy: { orderIndex: 'asc' },
+              select: {
+                orderIndex: true,
+                name: true,
+                matches: {
+                  orderBy: { position: 'asc' },
+                  select: { position: true, status: true, participant1Id: true, participant2Id: true, winnerId: true, scheduledAt: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!competition) throw new NotFoundException(t('errors.competitions.notFound'));
+
+    const ids = competition.events.flatMap((e) => e.rounds.flatMap((r) => r.matches.flatMap((m) => [m.participant1Id, m.participant2Id]))).filter((x): x is string => !!x);
+    const entries = await this.prisma.competitionParticipant.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, seed: true, userId: true, partnerUserId: true, user: { select: { firstname: true, lastname: true } }, partner: { select: { firstname: true, lastname: true } } },
+    });
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    const player = (entryId: string | null) => {
+      const e = entryId ? byId.get(entryId) : undefined;
+      if (!e) return null;
+      const name = `${e.user.firstname} ${e.user.lastname}`.trim();
+      return {
+        name: e.partner ? `${name} / ${e.partner.firstname} ${e.partner.lastname}`.trim() : name,
+        seed: e.seed,
+        isMe: e.userId === userId || e.partnerUserId === userId,
+      };
+    };
+    return competition.events.map((event) => {
+      const slots = new Map(event.drawSlots.map((s) => [s.position, s]));
+      // A first-round side without a player: a bye, or a place to fill.
+      const empty = (position: number) => {
+        const slot = slots.get(position);
+        return slot?.kind === 'BYE' ? { bye: true } : { placeholder: slot?.label ?? null };
+      };
+      return {
+        id: event.id,
+        name: event.name,
+        size: event.drawSize,
+        rounds: event.rounds.map((round) => ({
+          number: round.orderIndex,
+          name: round.name,
+          matches: round.matches.map((m) => ({
+            position: m.position,
+            status: m.status,
+            scheduledAt: m.scheduledAt,
+            side1: player(m.participant1Id) ?? (round.orderIndex === 1 ? empty(2 * m.position) : null),
+            side2: player(m.participant2Id) ?? (round.orderIndex === 1 ? empty(2 * m.position + 1) : null),
+            winner: m.winnerId ? (m.winnerId === m.participant1Id ? 1 : 2) : null,
+          })),
+        })),
+      };
+    });
   }
 
   private toView(row: CompetitionRow, now: Date) {

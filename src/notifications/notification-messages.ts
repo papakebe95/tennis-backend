@@ -33,7 +33,11 @@ export type NotificationKey =
   | 'registrationWithdrawn'
   | 'tournamentCancelled'
   | 'tournamentInterrupted'
-  | 'tournamentResumed';
+  | 'tournamentResumed'
+  | 'drawPublished'
+  | 'drawPlaced'
+  | 'drawReplacedOut'
+  | 'drawOpponentChanged';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -249,3 +253,13 @@ export const tournamentInterrupted = (competitionId: string, name: string, reaso
 
 export const tournamentResumed = (competitionId: string, name: string): NotifyInput =>
   tournament('tournamentResumed', competitionId, { name });
+
+export type DrawNotificationKey = 'drawPublished' | 'drawPlaced' | 'drawReplacedOut' | 'drawOpponentChanged';
+
+export const drawNotification = (
+  key: DrawNotificationKey,
+  competitionId: string,
+  name: string,
+  eventName: string,
+  reason?: string | null,
+): NotifyInput => tournament(key, competitionId, { name, eventName, reason: reason ?? '' });

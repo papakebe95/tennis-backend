@@ -34,6 +34,14 @@ export class CompetitionsController {
     return this.competitionsService.findOne(currentUser.userId, id);
   }
 
+  @Get(':id/draws')
+  draws(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.competitionsService.draws(currentUser.userId, id);
+  }
+
   @Post(':id/register')
   register(
     @CurrentUser() currentUser: AuthenticatedUser,

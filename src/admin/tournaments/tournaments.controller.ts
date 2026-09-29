@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard.js';
 import type { AuthenticatedUser } from '../../auth/jwt.strategy.js';
 import { Authorize, CurrentGrants } from '../../authz/permission.guard.js';
 import type { Grant } from '../../authz/scope.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { DrawEntrantDto, GenerateDrawDto, SwapSlotsDto } from './draw.dto.js';
+import { DrawService } from './draw.service.js';
 import { EventsService } from './events.service.js';
 import { RegistrationsService, type Decision } from './registrations.service.js';
 import { SportProfilesService } from './sport-profiles.service.js';
@@ -242,5 +244,77 @@ export class SportProfilesController {
   @Authorize('player.sport_profile.manage', { anywhere: true })
   update(@CurrentUser() user: AuthenticatedUser, @Param('userId') userId: string, @Body() dto: SportProfileDto) {
     return this.sportProfiles.update(user.userId, userId, dto);
+  }
+}
+
+/** One event's draw; `:id` is the event. */
+@Controller('admin/events/:id/draw')
+export class AdminDrawController {
+  constructor(private readonly draws: DrawService) {}
+
+  @Get()
+  @Authorize('draw.view', { resource: 'event' })
+  view(@Param('id') id: string) {
+    return this.draws.view(id);
+  }
+
+  @Get('candidates')
+  @Authorize('draw.manage', { resource: 'event' })
+  candidates(@Param('id') id: string) {
+    return this.draws.candidates(id);
+  }
+
+  @Post('generate')
+  @Authorize('draw.manage', { resource: 'event' })
+  generate(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: GenerateDrawDto) {
+    return this.draws.generate(user.userId, id, dto);
+  }
+
+  @Post('reset')
+  @Authorize('draw.manage', { resource: 'event' })
+  reset(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.draws.reset(user.userId, id);
+  }
+
+  @Post('swap')
+  @Authorize('draw.manage', { resource: 'event' })
+  swap(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: SwapSlotsDto) {
+    return this.draws.swap(user.userId, id, dto);
+  }
+
+  @Post('publish')
+  @Authorize('draw.publish', { resource: 'event' })
+  publish(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.draws.publish(user.userId, id);
+  }
+
+  @Post('lock')
+  @Authorize('draw.publish', { resource: 'event' })
+  lock(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.draws.lock(user.userId, id);
+  }
+
+  @Post('slots/:position/fill')
+  @Authorize('draw.manage', { resource: 'event' })
+  fill(
+    @CurrentGrants() grants: Grant[],
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('position', ParseIntPipe) position: number,
+    @Body() dto: DrawEntrantDto,
+  ) {
+    return this.draws.fill(grants, user.userId, id, position, dto);
+  }
+
+  @Post('slots/:position/replace')
+  @Authorize('draw.manage', { resource: 'event' })
+  replace(
+    @CurrentGrants() grants: Grant[],
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('position', ParseIntPipe) position: number,
+    @Body() dto: DrawEntrantDto,
+  ) {
+    return this.draws.replace(grants, user.userId, id, position, dto);
   }
 }

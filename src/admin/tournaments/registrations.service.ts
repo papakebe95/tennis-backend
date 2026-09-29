@@ -220,8 +220,13 @@ export class RegistrationsService {
 
   async decide(actorId: string, id: string, decision: Decision, dto: DecisionDto) {
     const rule = DECISIONS[decision];
-    const before = await this.prisma.competitionParticipant.findUnique({ where: { id } });
+    const before = await this.prisma.competitionParticipant.findUnique({ where: { id }, include: { drawSlot: { select: { id: true } } } });
     if (!before) throw new NotFoundException(t('errors.tournaments.registrationNotFound'));
+    // A placed player leaves the draw through a replacement, which keeps the
+    // bracket consistent.
+    if (before.drawSlot && decision !== 'approve') {
+      throw new ConflictException({ message: t('errors.draws.entryInDraw'), code: 'ENTRY_IN_DRAW' });
+    }
     const event = await this.event(before.eventId);
     this.assertEntriesOpen(event);
     if (!rule.from.includes(before.status)) {

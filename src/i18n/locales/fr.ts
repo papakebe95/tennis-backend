@@ -92,6 +92,29 @@ export const fr: Messages = {
       notEligible: "Vous n'êtes éligible à aucun tableau de ce tournoi (classement, âge ou sexe)",
       rejected: 'Votre inscription à ce tournoi a été refusée',
     },
+    draws: {
+      formatUnsupported: "Seuls les tableaux à élimination directe peuvent être tirés pour l'instant",
+      alreadyPublished: 'Le tableau est publié : réinitialisez-le avant un nouveau tirage',
+      notGenerated: "Le tirage n'a pas encore été fait",
+      notDraft: 'Seul un tableau en brouillon peut être publié',
+      notPublished: 'Seul un tableau publié peut être verrouillé',
+      locked: 'Le tableau est verrouillé : remplissez ou remplacez des places',
+      lockedForbidden: 'Modifier un tableau verrouillé demande le droit correspondant',
+      playStarted: 'Le jeu a commencé : le tirage ne peut plus être refait',
+      tooFew: 'Un tableau demande au moins 2 joueurs ou places',
+      tooMany: 'Un tableau compte au plus 128 joueurs',
+      sizeTooSmall: 'Cette taille de tableau est trop petite pour les inscrits',
+      slotNotFound: 'Place du tableau introuvable',
+      slotNotOpen: 'Seule une place de qualifié ou une place libre peut être remplie',
+      slotNotEntry: "Aucun joueur à remplacer sur cette place",
+      matchStarted: 'Ce match a déjà commencé',
+      playerEliminated: 'Ce joueur est déjà éliminé',
+      entryNotAvailable: "Cette inscription n'est pas disponible (non acceptée ou déjà placée)",
+      entrantRequired: 'Choisissez un joueur',
+      alreadyInDraw: 'Ce joueur est déjà dans le tableau',
+      stale: 'Le tableau a changé entre-temps : rechargez-le et réessayez',
+      entryInDraw: 'Ce joueur est dans le tableau : remplacez-le depuis le tableau',
+    },
     tournaments: {
       notFound: 'Tournoi introuvable',
       eventNotFound: 'Tableau introuvable',
@@ -310,6 +333,22 @@ export const fr: Messages = {
     OTHER: 'Autre raison',
   },
   notifications: {
+    drawPublished: {
+      title: 'Le tableau est publié',
+      body: 'Découvrez votre adversaire en {eventName} · {name}.',
+    },
+    drawPlaced: {
+      title: 'Vous êtes dans le tableau',
+      body: 'Vous avez une place en {eventName} · {name}. Consultez votre premier match.',
+    },
+    drawReplacedOut: {
+      title: 'Remplacé dans le tableau',
+      body: 'Vous avez été remplacé en {eventName} · {name} : {reason}',
+    },
+    drawOpponentChanged: {
+      title: 'Nouvel adversaire',
+      body: 'Votre prochain adversaire en {eventName} · {name} a changé.',
+    },
     registrationReceived: {
       title: 'Inscription reçue',
       body: "Votre inscription à {name} a bien été reçue. L'organisateur va la confirmer.",
