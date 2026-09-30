@@ -398,6 +398,7 @@ model User {
   interruptionsStarted   CompetitionInterruption[] @relation("InterruptionStarter")
   interruptionsResumed   CompetitionInterruption[] @relation("InterruptionResumer")
   matchesOfficiated      CompetitionMatch[]        @relation("MatchOfficial")
+  announcementsSent      Announcement[]            @relation("AnnouncementSender")
   favorites              Favorite[]
   notifications          Notification[]
   refreshTokens          RefreshToken[]
@@ -461,7 +462,7 @@ model Classification {
   eventsAsStrongest CompetitionEvent[] @relation("EventMaxClassification")
 }
 
-// Additional contact numbers). The user's primary number stays in
+// Additional contact numbers. The user's primary number stays in
 // `User.msisdn`; "make primary" swaps the two inside a transaction.
 model UserPhone {
   id        String     @id @default(cuid())
@@ -513,6 +514,7 @@ model Organization {
   memberships    OrganizationAffiliation[] @relation("AffiliationMember")
   payments       Payment[]
   affiliations   OrganizationAffiliation[] @relation("AffiliationParent")
+  announcements  Announcement[]
   competitions   Competition[]
 
   @@index([type, status])
@@ -874,20 +876,55 @@ model Payment {
   refundReason      String?
   membershipId      String?
   bookingId         String?
+  // Tournament entry fee (purpose TOURNAMENT_ENTRY).
+  participantId     String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  method       PaymentMethod @relation(fields: [methodKey], references: [key], onDelete: Restrict)
-  payer        User?         @relation("PaymentPayer", fields: [payerId], references: [id], onDelete: SetNull)
-  recordedBy   User?         @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
-  membership   Membership?   @relation(fields: [membershipId], references: [id], onDelete: Restrict)
-  booking      Booking?      @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  method       PaymentMethod           @relation(fields: [methodKey], references: [key], onDelete: Restrict)
+  payer        User?                   @relation("PaymentPayer", fields: [payerId], references: [id], onDelete: SetNull)
+  recordedBy   User?                   @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  membership   Membership?             @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  booking      Booking?                @relation(fields: [bookingId], references: [id], onDelete: Restrict)
+  participant  CompetitionParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, paidAt])
   @@index([organizationId, status])
   @@index([membershipId])
   @@index([bookingId])
+  @@index([participantId])
+}
+
+enum AnnouncementAudience {
+  // A tournament's entrants (optionally one table), a club's members, a
+  // federation's players (members of its affiliated clubs).
+  TOURNAMENT_ENTRANTS
+  CLUB_MEMBERS
+  FEDERATION_PLAYERS
+}
+
+// A message sent to a group of players as notifications; kept so organizers
+// see what was sent, when and to how many.
+model Announcement {
+  id             String               @id @default(cuid())
+  audience       AnnouncementAudience
+  competitionId  String?
+  eventId        String?
+  organizationId String?
+  title          String
+  body           String
+  recipientCount Int
+  sentById       String?
+  createdAt      DateTime             @default(now())
+
+  competition  Competition?      @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  event        CompetitionEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  organization Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sentBy       User?             @relation("AnnouncementSender", fields: [sentById], references: [id], onDelete: SetNull)
+
+  @@index([competitionId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 // Weekly opening windows of one court (weekday 0 = Monday … 6 = Sunday,
@@ -1119,6 +1156,7 @@ model Competition {
   rounds           CompetitionRound[]
   staff            UserRole[]
   auditLogs        AuditLog[]
+  announcements    Announcement[]
 
   @@index([hostOrganizationId])
   @@index([status, startDate])
@@ -1173,6 +1211,7 @@ model CompetitionEvent {
   drawSlots          DrawSlot[]
   qualifierSlots     DrawSlot[]               @relation("DrawSlotSource")
   rounds             CompetitionRound[]
+  announcements      Announcement[]
 
   @@index([competitionId, tableOrder])
 }
@@ -1225,6 +1264,7 @@ model CompetitionParticipant {
   partner     User?             @relation("ParticipantPartner", fields: [partnerUserId], references: [id], onDelete: SetNull)
   decidedBy   User?             @relation("ParticipantDecider", fields: [decidedById], references: [id], onDelete: SetNull)
   drawSlot    DrawSlot?
+  payments    Payment[]
 
   matchesAsParticipant1 CompetitionMatch[] @relation("CompetitionMatchParticipant1")
   matchesAsParticipant2 CompetitionMatch[] @relation("CompetitionMatchParticipant2")

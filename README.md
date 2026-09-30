@@ -373,6 +373,30 @@ Rules enforced server-side:
   - Player bookings and court availability, in turn, treat scheduled tournament matches as taken.
 - Completing a tournament needs every match finished (postponed ones count as unfinished).
 
+### Entry fees, announcements, reports and rankings
+
+| Endpoints | Permission |
+|---|---|
+| `POST /admin/registrations/:id/payments {amount, methodKey, externalReference?}` | `payment.record` (on the tournament or its host) |
+| `GET/POST /admin/tournaments/:id/announcements`, `GET/POST /admin/clubs/:id/announcements`, `GET/POST /admin/federations/:id/announcements` | `tournament.view` / `tournament.announce`, `notification.broadcast` |
+| `GET /admin/reports/clubs/:id?type=revenue\|members\|occupancy&from&to` | `report.view` (+ `report.export` for `&format=csv`) |
+| `GET /admin/reports/tournaments/:id?type=entries\|results` | same |
+| `GET /admin/reports/federations/:id?type=clubs\|players&from&to` | same |
+| `GET /admin/federations/:id/rankings?season&q&page` (`&format=csv`) | `federation.rankings.view` |
+
+- **Entry fees** are payments with purpose `TOURNAMENT_ENTRY`, linked to the entry and booked to the host organization. The entries list shows paid against due. Independent tournaments collect fees outside the platform.
+- **Announcements** go out as notifications, in the organizer's own words. Audiences:
+  - a tournament: its entrants, or one table's
+  - a club: its active members
+  - a federation: members in good standing of its affiliated clubs
+
+  Each one is kept with its recipient count.
+- **Reports** are generic tables (columns, rows, totals, one chart series), computed live and exported as CSV with a totals line:
+  - club: revenue by month and purpose, members by plan, court occupancy (open, booked and tournament hours)
+  - tournament: entries and fees per table, results
+  - federation: affiliated clubs, players by classification and gender
+- **Federation ranking:** federation players ordered by season points from OFFICIAL matches (tournament results), using the same points as the app.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.

@@ -33,6 +33,8 @@ export const paymentSelect = {
   payer: { select: { id: true, firstname: true, lastname: true, msisdn: true } },
   recordedBy: { select: { id: true, firstname: true, lastname: true } },
   booking: { select: { id: true, startTime: true, court: { select: { name: true } } } },
+  participantId: true,
+  participant: { select: { id: true, event: { select: { name: true } }, competition: { select: { id: true, name: true } } } },
 } satisfies Prisma.PaymentSelect;
 
 /** "PAY-20260928-7K3QX2": dated, unguessable, easy to read out. */
@@ -131,6 +133,30 @@ export class PaymentsService {
         }
         payerId ??= period.member.userId;
         currency = period.currency;
+      } else if (dto.purpose === PaymentPurpose.TOURNAMENT_ENTRY) {
+        if (!dto.participantId) throw new BadRequestException(t('errors.payments.targetRequired'));
+        // Lock the entry: no paying the fee twice at two desks.
+        await tx.$queryRaw`SELECT 1 FROM "CompetitionParticipant" WHERE "id" = ${dto.participantId} FOR UPDATE`;
+        const entry = await tx.competitionParticipant.findUnique({
+          where: { id: dto.participantId },
+          select: {
+            userId: true,
+            event: { select: { entryFee: true } },
+            competition: { select: { hostOrganizationId: true, currency: true } },
+            payments: { where: { status: PaymentStatus.PAID }, select: { amount: true } },
+          },
+        });
+        if (!entry || entry.competition.hostOrganizationId !== organizationId) {
+          throw new BadRequestException(t('errors.payments.targetMismatch'));
+        }
+        const fee = entry.event.entryFee ?? new Prisma.Decimal(0);
+        const paid = entry.payments.reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0));
+        const remaining = remainingDue(fee, paid);
+        if (dto.amount > remaining) {
+          throw new BadRequestException(t('errors.payments.overpay', { remaining }));
+        }
+        payerId ??= entry.userId;
+        currency = entry.competition.currency;
       } else if (dto.purpose === PaymentPurpose.BOOKING) {
         if (!dto.bookingId) throw new BadRequestException(t('errors.payments.targetRequired'));
         const booking = await tx.booking.findUnique({
@@ -160,6 +186,7 @@ export class PaymentsService {
           recordedById: actorId,
           membershipId: dto.purpose === PaymentPurpose.MEMBERSHIP ? dto.membershipId : null,
           bookingId: dto.purpose === PaymentPurpose.BOOKING ? dto.bookingId : null,
+          participantId: dto.purpose === PaymentPurpose.TOURNAMENT_ENTRY ? dto.participantId : null,
         },
         select: paymentSelect,
       });

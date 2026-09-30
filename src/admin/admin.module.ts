@@ -6,7 +6,12 @@ import {
 import { AccessRequestsService } from '../access-requests/access-requests.service.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { AuditLogsController, DashboardController, LookupsController } from './admin.controllers.js';
+import { AnnouncementsController } from './announcements/announcements.controller.js';
+import { AnnouncementsService } from './announcements/announcements.service.js';
 import { AuditLogsService } from './audit-logs/audit-logs.service.js';
+import { RankingsService } from './reports/rankings.service.js';
+import { ReportsController } from './reports/reports.controller.js';
+import { ReportsService } from './reports/reports.service.js';
 import { DashboardService } from './dashboard/dashboard.service.js';
 import { ClubOpsService } from './members/club-ops.service.js';
 import {
@@ -75,6 +80,8 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     AdminDrawController,
     AdminMatchesController,
     TournamentScheduleController,
+    AnnouncementsController,
+    ReportsController,
   ],
   providers: [
     AdminUsersService,
@@ -94,6 +101,9 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     SportProfilesService,
     DrawService,
     MatchesService,
+    AnnouncementsService,
+    ReportsService,
+    RankingsService,
   ],
   exports: [AccessRequestsService, RoleGrantsService],
 })

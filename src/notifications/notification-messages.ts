@@ -40,7 +40,8 @@ export type NotificationKey =
   | 'drawOpponentChanged'
   | 'tournamentMatchScheduled'
   | 'tournamentMatchResult'
-  | 'tournamentMatchPostponed';
+  | 'tournamentMatchPostponed'
+  | 'announcement';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -282,3 +283,7 @@ export const matchNotification = (
   eventName: string,
   params: Record<string, string>,
 ): NotifyInput => tournament(MATCH_KEYS[key], competitionId, { name, eventName, ...params });
+
+/** An organizer's message: their own words, so no translation beyond the frame. */
+export const announcement = (from: string, title: string, body: string, route?: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'announcement', { from, title, body }, route);

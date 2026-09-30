@@ -4,6 +4,7 @@ import type { AuthenticatedUser } from '../../auth/jwt.strategy.js';
 import { Authorize, CurrentGrants } from '../../authz/permission.guard.js';
 import type { Grant } from '../../authz/scope.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { EntryPaymentDto } from '../members/members.dto.js';
 import { DrawEntrantDto, GenerateDrawDto, SwapSlotsDto } from './draw.dto.js';
 import { DrawService } from './draw.service.js';
 import { EventsService } from './events.service.js';
@@ -215,6 +216,12 @@ export class AdminRegistrationsController {
   @Authorize('registration.manage', { resource: 'registration' })
   withdraw(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: DecisionDto) {
     return this.decide(user, id, 'withdraw', dto);
+  }
+
+  @Post(':id/payments')
+  @Authorize('payment.record', { resource: 'registration' })
+  pay(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: EntryPaymentDto) {
+    return this.registrations.payEntry(user.userId, id, dto);
   }
 
   @Patch(':id/seed')

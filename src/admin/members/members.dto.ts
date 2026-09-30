@@ -105,6 +105,8 @@ export class RecordPaymentDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(80) externalReference?: string;
   @IsOptional() @IsString() membershipId?: string;
   @IsOptional() @IsString() bookingId?: string;
+  /** Tournament entry paid (purpose TOURNAMENT_ENTRY). */
+  @IsOptional() @IsString() participantId?: string;
   @IsOptional() @IsString() payerId?: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(120) payerName?: string;
   @IsOptional() @Type(() => Date) @IsDate() paidAt?: Date;
@@ -130,4 +132,12 @@ export class CancelBookingDto {
 
 export class FederationPlayersQueryDto extends PageQueryDto {
   @IsOptional() @IsString() clubId?: string;
+}
+
+/** Entry fee taken for a tournament entry (organization: the host). */
+export class EntryPaymentDto {
+  @Type(() => Number) @IsNumber({ maxDecimalPlaces: 2 }) @Min(1) @Max(100_000_000) amount!: number;
+  @IsString() methodKey!: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(80) externalReference?: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) notes?: string;
 }

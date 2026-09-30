@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { EntryType, EventDiscipline, Prisma, RegistrationStatus } from '@prisma/client';
+import { EntryType, EventDiscipline, PaymentPurpose, PaymentStatus, Prisma, RegistrationStatus } from '@prisma/client';
 import { AuditService } from '../../audit/audit.service.js';
 import { orderBy, pageArgs, searchText, toPage } from '../../common/pagination.js';
 import { maskPhone, personSearchWhere } from '../../common/person-search.js';
@@ -7,6 +7,8 @@ import { t } from '../../i18n/i18n.js';
 import { registrationDecided, type RegistrationOutcome } from '../../notifications/notification-messages.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { EntryPaymentDto } from '../members/members.dto.js';
+import { PaymentsService } from '../members/payments.service.js';
 import { entryIssues, sportAge, type EligibilityIssue } from './eligibility.js';
 import { checkEntry, eventRulesSelect, toRules, weakestScaleRank } from './entry-facts.js';
 import { entriesOpen } from './tournament-lifecycle.js';
@@ -51,6 +53,7 @@ const eventSelect = {
   maxEntries: true,
   qualifierCount: true,
   seedCount: true,
+  entryFee: true,
   ...eventRulesSelect,
   competition: { select: { id: true, name: true, status: true, startDate: true, hostOrganizationId: true } },
 } satisfies Prisma.CompetitionEventSelect;
@@ -63,6 +66,7 @@ export class RegistrationsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   // Reading ------------------------------------------------------------
@@ -97,12 +101,19 @@ export class RegistrationsService {
       this.prisma.competitionParticipant.groupBy({ by: ['status'], where: { eventId }, _count: { _all: true } }),
       weakestScaleRank(this.prisma),
     ]);
+    const paid = await this.prisma.payment.groupBy({
+      by: ['participantId'],
+      where: { participantId: { in: rows.map((r) => r.id) }, status: PaymentStatus.PAID },
+      _sum: { amount: true },
+    });
+    const paidOf = (id: string) => Number(paid.find((p) => p.participantId === id)?._sum.amount ?? 0);
     const rules = toRules(event);
     const on = event.competition.startDate;
     return {
       ...toPage(
         rows.map(({ user, partner, ...entry }) => ({
           ...entry,
+          fee: { due: Number(event.entryFee ?? 0), paid: paidOf(entry.id) },
           player: this.player(user, on),
           partner: partner ? this.player(partner, on) : null,
           // Live check: a profile may have changed since the entry was made.
@@ -303,6 +314,29 @@ export class RegistrationsService {
         },
         tx,
       );
+    });
+  }
+
+  /**
+   * Takes an entry fee at the desk. The money goes to the host
+   * organization's books; independent tournaments collect fees outside the
+   * platform.
+   */
+  async payEntry(actorId: string, id: string, dto: EntryPaymentDto) {
+    const entry = await this.prisma.competitionParticipant.findUnique({
+      where: { id },
+      select: { competition: { select: { hostOrganizationId: true } } },
+    });
+    if (!entry) throw new NotFoundException(t('errors.tournaments.registrationNotFound'));
+    const organizationId = entry.competition.hostOrganizationId;
+    if (!organizationId) throw new ConflictException({ message: t('errors.tournaments.noHostForPayments'), code: 'NO_HOST_ORGANIZATION' });
+    return this.payments.record(actorId, organizationId, {
+      purpose: PaymentPurpose.TOURNAMENT_ENTRY,
+      participantId: id,
+      amount: dto.amount,
+      methodKey: dto.methodKey,
+      externalReference: dto.externalReference,
+      notes: dto.notes,
     });
   }
 
