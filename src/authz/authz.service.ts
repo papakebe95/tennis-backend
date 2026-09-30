@@ -24,7 +24,8 @@ export type ResourceType =
   | 'booking'
   | 'event'
   | 'registration'
-  | 'match';
+  | 'match'
+  | 'membershipRequest';
 
 const org = (id: string): Scope => ({ type: RoleScope.ORGANIZATION, id });
 
@@ -107,6 +108,11 @@ export class AuthzService implements OnApplicationBootstrap {
         const row = await this.prisma.payment.findUnique({ where: { id }, select: { organizationId: true } });
         if (!row) throw notFound();
         return [org(row.organizationId), GLOBAL_SCOPE];
+      }
+      case 'membershipRequest': {
+        const row = await this.prisma.clubMembershipRequest.findUnique({ where: { id }, select: { club: { select: { organizationId: true } } } });
+        if (!row) throw notFound();
+        return [org(row.club.organizationId), GLOBAL_SCOPE];
       }
       case 'booking': {
         const row = await this.prisma.booking.findUnique({

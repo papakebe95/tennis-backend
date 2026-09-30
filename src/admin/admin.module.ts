@@ -20,8 +20,10 @@ import {
   FederationPlayersController,
   MembersController,
   MembershipPlansController,
+  MembershipRequestsController,
   PaymentsController,
 } from './members/members.controller.js';
+import { MembershipRequestsService } from './members/membership-requests.service.js';
 import { MembersService } from './members/members.service.js';
 import { PaymentsService } from './members/payments.service.js';
 import { ClubsAdminService } from './organizations/clubs-admin.service.js';
@@ -73,6 +75,7 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     PaymentsController,
     BookingsAdminController,
     FederationPlayersController,
+    MembershipRequestsController,
     AdminTournamentsController,
     AdminEventsController,
     AdminRegistrationsController,
@@ -95,6 +98,7 @@ import { RoleGrantsService } from './users/role-grants.service.js';
     MembersService,
     PaymentsService,
     ClubOpsService,
+    MembershipRequestsService,
     TournamentsService,
     EventsService,
     RegistrationsService,

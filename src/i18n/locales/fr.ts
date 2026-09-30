@@ -92,6 +92,13 @@ export const fr: Messages = {
       notEligible: "Vous n'êtes éligible à aucun tableau de ce tournoi (classement, âge ou sexe)",
       rejected: 'Votre inscription à ce tournoi a été refusée',
     },
+    clubMembership: {
+      alreadyMember: 'Vous êtes déjà membre de ce club',
+      noPendingRequest: 'Aucune demande en cours pour ce club',
+      notMember: "Vous n'êtes pas membre de ce club",
+      requestNotFound: "Demande d'adhésion introuvable",
+      notPending: 'Cette demande a déjà reçu une réponse',
+    },
     reports: { invalidPeriod: 'Le début doit précéder la fin' },
     tournamentMatches: {
       notFound: 'Match introuvable',
@@ -355,6 +362,7 @@ export const fr: Messages = {
     EMERGENCY: 'Urgence',
     OTHER: 'Autre raison',
   },
+  clubMembership: { leftFromApp: "A quitté le club depuis l'application", rejoined: "Retour via une demande d'adhésion" },
   reports: {
     types: {
       revenue: 'Recettes',
@@ -413,6 +421,18 @@ export const fr: Messages = {
     totalRow: 'Total',
   },
   notifications: {
+    membershipRequested: {
+      title: 'Demande d’adhésion',
+      body: '{playerName} demande à rejoindre {clubName}.',
+    },
+    membershipApproved: {
+      title: 'Bienvenue à {clubName}',
+      body: 'Votre demande d’adhésion a été acceptée.',
+    },
+    membershipDeclined: {
+      title: 'Demande d’adhésion refusée',
+      body: '{clubName} a refusé votre demande : {reason}',
+    },
     announcement: {
       title: '{from} · {title}',
       body: '{body}',

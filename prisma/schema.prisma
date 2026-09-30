@@ -373,13 +373,15 @@ model User {
   updatedAt          DateTime    @updatedAt
 
   // Authorization grants (see UserRole); replaces the old single `role` column.
-  roles                  UserRole[]      @relation("UserRoleUser")
-  accessRequests         AccessRequest[] @relation("AccessRequestApplicant")
-  accessRequestsReviewed AccessRequest[] @relation("AccessRequestReviewer")
+  roles                  UserRole[]              @relation("UserRoleUser")
+  accessRequests         AccessRequest[]         @relation("AccessRequestApplicant")
+  accessRequestsReviewed AccessRequest[]         @relation("AccessRequestReviewer")
   clubMemberships        ClubMember[]
-  paymentsMade           Payment[]       @relation("PaymentPayer")
-  paymentsRecorded       Payment[]       @relation("PaymentRecorder")
-  rolesGranted           UserRole[]      @relation("UserRoleGrantedBy")
+  membershipRequests     ClubMembershipRequest[] @relation("MembershipRequestPlayer")
+  membershipDecisions    ClubMembershipRequest[] @relation("MembershipRequestDecider")
+  paymentsMade           Payment[]               @relation("PaymentPayer")
+  paymentsRecorded       Payment[]               @relation("PaymentRecorder")
+  rolesGranted           UserRole[]              @relation("UserRoleGrantedBy")
   auditLogs              AuditLog[]
 
   playerProfile PlayerProfile?
@@ -718,14 +720,15 @@ model Club {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  city            City             @relation(fields: [cityId], references: [id], onDelete: Restrict)
-  courts          Court[]
-  bookings        Booking[]
-  competitions    Competition[]
-  matches         Match[]
-  members         ClubMember[]
-  membershipPlans MembershipPlan[]
+  organization       Organization            @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  city               City                    @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  courts             Court[]
+  bookings           Booking[]
+  competitions       Competition[]
+  matches            Match[]
+  members            ClubMember[]
+  membershipPlans    MembershipPlan[]
+  membershipRequests ClubMembershipRequest[]
 
   // Lets Court reference (id, cityId) so a court's city can never differ from
   // its club's city — see Court.club.
@@ -783,13 +786,49 @@ model MembershipPlan {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  club        Club         @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club        Club                    @relation(fields: [clubId], references: [id], onDelete: Cascade)
   memberships Membership[]
+  requests    ClubMembershipRequest[]
 
   @@unique([clubId, name])
 }
 
 // A person's membership of a club (one per club), across renewals.
+enum MembershipRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+}
+
+// A player asking, from the app, to become a member of a club. Club staff
+// approve it (which creates or reactivates the ClubMember with a period on a
+// plan) or decline it. One pending request per player and club.
+model ClubMembershipRequest {
+  id          String                  @id @default(cuid())
+  clubId      String
+  userId      String
+  // Plan the player would like; staff pick the actual one at approval.
+  planId      String?
+  message     String?
+  status      MembershipRequestStatus @default(PENDING)
+  createdAt   DateTime                @default(now())
+  decidedAt   DateTime?
+  decidedById String?
+  // Why it was declined (told to the player).
+  reason      String?
+  // The membership it led to.
+  memberId    String?
+
+  club      Club            @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user      User            @relation("MembershipRequestPlayer", fields: [userId], references: [id], onDelete: Cascade)
+  plan      MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  decidedBy User?           @relation("MembershipRequestDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([clubId, status, createdAt])
+  @@index([userId, status])
+}
+
 model ClubMember {
   id                  String       @id @default(cuid())
   clubId              String

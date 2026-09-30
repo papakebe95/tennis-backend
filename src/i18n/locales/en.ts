@@ -93,6 +93,13 @@ export const en = {
       notEligible: "You aren't eligible for any table of this tournament (classification, age or gender)",
       rejected: 'Your registration for this tournament was declined',
     },
+    clubMembership: {
+      alreadyMember: 'You are already a member of this club',
+      noPendingRequest: 'There is no pending request for this club',
+      notMember: 'You are not a member of this club',
+      requestNotFound: 'Membership request not found',
+      notPending: 'This request has already been answered',
+    },
     reports: { invalidPeriod: 'The start must come before the end' },
     tournamentMatches: {
       notFound: 'Match not found',
@@ -357,6 +364,7 @@ export const en = {
     EMERGENCY: 'Emergency',
     OTHER: 'Other reason',
   },
+  clubMembership: { leftFromApp: 'Left the club from the app', rejoined: 'Back through a membership request' },
   reports: {
     types: {
       revenue: 'Revenue',
@@ -415,6 +423,18 @@ export const en = {
     totalRow: 'Total',
   },
   notifications: {
+    membershipRequested: {
+      title: 'Membership request',
+      body: '{playerName} asks to join {clubName}.',
+    },
+    membershipApproved: {
+      title: 'Welcome to {clubName}',
+      body: 'Your membership request was accepted.',
+    },
+    membershipDeclined: {
+      title: 'Membership request declined',
+      body: '{clubName} declined your request: {reason}',
+    },
     announcement: {
       title: '{from} · {title}',
       body: '{body}',

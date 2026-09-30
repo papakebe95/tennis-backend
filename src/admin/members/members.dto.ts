@@ -141,3 +141,19 @@ export class EntryPaymentDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(80) externalReference?: string;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(500) notes?: string;
 }
+
+export class ApproveMembershipRequestDto {
+  @IsString() planId!: string;
+  @IsOptional() @Type(() => Date) @IsDate() startsAt?: Date;
+  @IsOptional() @Transform(trim) @Matches(/^[A-Za-z0-9-]{1,20}$/) membershipNumber?: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(500) notes?: string;
+  @IsOptional() @ValidateNested() @Type(() => InitialPaymentDto) payment?: InitialPaymentDto;
+}
+
+export class DeclineMembershipRequestDto {
+  @Transform(trim) @IsString() @MinLength(2) @MaxLength(300) reason!: string;
+}
+
+export class MembershipRequestsQueryDto {
+  @IsOptional() @IsIn(['PENDING', 'APPROVED', 'DECLINED', 'CANCELLED']) status?: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+}

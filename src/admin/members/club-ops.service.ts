@@ -140,6 +140,7 @@ export class ClubOpsService {
       revenueByMonth,
       newMembers,
       competitions,
+      membershipRequests,
       pendingRegistrations,
       recentActivity,
       todayList,
@@ -170,6 +171,7 @@ export class ClubOpsService {
         SELECT date_trunc('week', "joinedAt") AS week, count(*)::int AS count
         FROM "ClubMember" WHERE "clubId" = ${clubId} AND "joinedAt" >= ${new Date(now.getTime() - 84 * DAY_MS)} GROUP BY 1`,
       this.prisma.competition.findMany({ where: { OR: [{ clubId }, { hostOrganization: { club: { id: clubId } } }] }, select: { id: true, name: true, status: true, startDate: true, endDate: true } }),
+      this.prisma.clubMembershipRequest.count({ where: { clubId, status: 'PENDING' } }),
       // Entries waiting for a decision in tournaments the club hosts.
       this.prisma.competitionParticipant.count({
         where: {
@@ -209,6 +211,7 @@ export class ClubOpsService {
     return {
       club: { id: club.id, name: club.name },
       pendingActions: [
+        { key: 'membershipRequests', count: membershipRequests, route: 'members?requests=open' },
         { key: 'overdueMemberships', count: overdue, route: 'members?paymentStatus=OVERDUE' },
         { key: 'expiringSoon', count: expiringSoon, route: 'members?sort=expiresAt:asc' },
         { key: 'expiredMemberships', count: expired, route: 'members?paymentStatus=EXPIRED' },

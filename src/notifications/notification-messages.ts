@@ -41,7 +41,10 @@ export type NotificationKey =
   | 'tournamentMatchScheduled'
   | 'tournamentMatchResult'
   | 'tournamentMatchPostponed'
-  | 'announcement';
+  | 'announcement'
+  | 'membershipRequested'
+  | 'membershipApproved'
+  | 'membershipDeclined';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
 export type NotificationParams = Record<string, string | number | null>;
@@ -287,3 +290,11 @@ export const matchNotification = (
 /** An organizer's message: their own words, so no translation beyond the frame. */
 export const announcement = (from: string, title: string, body: string, route?: string): NotifyInput =>
   build(NotificationType.SYSTEM, 'announcement', { from, title, body }, route);
+
+/** To club staff: a player asked to join (back-office). */
+export const membershipRequested = (playerName: string, clubName: string): NotifyInput =>
+  build(NotificationType.SYSTEM, 'membershipRequested', { playerName, clubName });
+
+/** To the player: the club answered their request. */
+export const membershipDecided = (approved: boolean, clubName: string, reason?: string | null): NotifyInput =>
+  build(NotificationType.SYSTEM, approved ? 'membershipApproved' : 'membershipDeclined', { clubName, reason: reason ?? '' });

@@ -9,7 +9,10 @@ import { t } from '../../i18n/i18n.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ClubOpsService } from './club-ops.service.js';
 import {
+  ApproveMembershipRequestDto,
   CancelBookingDto,
+  DeclineMembershipRequestDto,
+  MembershipRequestsQueryDto,
   CandidateQueryDto,
   CreateMemberDto,
   CreatePlanDto,
@@ -25,6 +28,7 @@ import {
   UpdateMemberDto,
 } from './members.dto.js';
 import { MembersService } from './members.service.js';
+import { MembershipRequestsService } from './membership-requests.service.js';
 import { PaymentsService } from './payments.service.js';
 
 const sendCsv = (res: Response, filename: string, csv: string) => {
@@ -41,6 +45,7 @@ export class ClubMembersController {
     private readonly payments: PaymentsService,
     private readonly ops: ClubOpsService,
     private readonly prisma: PrismaService,
+    private readonly requests: MembershipRequestsService,
   ) {}
 
   @Get(':id/dashboard')
@@ -59,6 +64,12 @@ export class ClubMembersController {
   @Authorize('membership.plan.manage', { resource: 'club' })
   createPlan(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: CreatePlanDto) {
     return this.members.createPlan(user.userId, id, dto);
+  }
+
+  @Get(':id/membership-requests')
+  @Authorize('member.view', { resource: 'club' })
+  membershipRequests(@Param('id') id: string, @Query() query: MembershipRequestsQueryDto) {
+    return this.requests.list(id, query.status);
   }
 
   @Get(':id/member-candidates')
@@ -200,5 +211,24 @@ export class FederationPlayersController {
   @Authorize('federation.players.view', { resource: 'organization' })
   players(@Param('id') id: string, @Query() query: FederationPlayersQueryDto) {
     return this.ops.federationPlayers(id, query);
+  }
+}
+
+/** A player's request to join a club; `:id` is the request. */
+@Controller('admin/membership-requests')
+export class MembershipRequestsController {
+  constructor(private readonly requests: MembershipRequestsService) {}
+
+  @Post(':id/approve')
+  @Authorize('member.manage', { resource: 'membershipRequest' })
+  approve(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: ApproveMembershipRequestDto) {
+    return this.requests.approve(user.userId, id, dto);
+  }
+
+  @Post(':id/decline')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Authorize('member.manage', { resource: 'membershipRequest' })
+  decline(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: DeclineMembershipRequestDto) {
+    return this.requests.decline(user.userId, id, dto.reason);
   }
 }

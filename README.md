@@ -397,6 +397,23 @@ Rules enforced server-side:
   - federation: affiliated clubs, players by classification and gender
 - **Federation ranking:** federation players ordered by season points from OFFICIAL matches (tournament results), using the same points as the app.
 
+### Club membership for players (mobile)
+
+A player asks to join a club from the app. The club approves or declines in the back-office, and approving creates the real membership (number, plan, dues). Players can belong to several clubs.
+
+| Endpoint (signed in) | What it does |
+|---|---|
+| `GET /users/me/clubs` | The player's clubs (number, plan, period, payment status as the club sees it) and pending requests |
+| `GET /clubs/:id/membership` | Where the player stands with a club: `member`, latest `request`, active `plans`, `canRequest`, `canLeave` |
+| `POST /clubs/:id/membership-requests {planId?, message?}` | Asks to join. Idempotent while pending; `409 ALREADY_MEMBER` for current members. Club staff holding `member.manage` are notified |
+| `DELETE /clubs/:id/membership-requests/mine` | Cancels the pending request |
+| `POST /clubs/:id/membership/leave {reason?}` | Leaves the club: the member record and history stay, marked `LEFT` |
+
+Back-office: `GET /admin/clubs/:id/membership-requests?status=` (`member.view`), then `POST /admin/membership-requests/:id/approve {planId, startsAt?, membershipNumber?, payment?}` or `POST …/decline {reason}` (`member.manage`, on the club). The player is notified either way.
+- Approving a new player creates the member.
+- Approving a former member (`LEFT`) reactivates them with a new period, keeping their number.
+- If the player was added by hand in the meantime, the request is simply marked approved.
+
 ### Media (Cloudflare R2)
 
 Images are uploaded with `POST /uploads/:folder` (multipart `file`; JPEG, PNG or WebP, 5 MB max) to the R2 bucket set by `R2_*`, and the returned public URL is saved on the record.
