@@ -33,7 +33,9 @@ const build = (overrides: Record<string, unknown> = {}) => {
     $transaction: vi.fn((queries: Promise<unknown>[]) => Promise.all(queries)),
     ...overrides,
   };
-  return { service: new ProductsService(prisma as never), prisma };
+  // Media rules are MediaService's own concern; accept every image here.
+  const media = { assertOwn: () => undefined, release: async () => undefined };
+  return { service: new ProductsService(prisma as never, media as never), prisma };
 };
 
 const dto = (category: string) =>

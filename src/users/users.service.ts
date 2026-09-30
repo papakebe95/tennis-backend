@@ -12,6 +12,7 @@ import {
   Prisma,
   User,
 } from '@prisma/client';
+import { MediaService } from '../uploads/media.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { normalizePhone } from '../common/utils/phone.js';
 import { CreatePhoneDto } from './dto/phone.dto.js';
@@ -30,7 +31,10 @@ const MAX_EXTRA_PHONES = 5;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaService,
+  ) {}
 
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { id } });
@@ -89,6 +93,8 @@ export class UsersService {
     if (profile.ntrpRating != null && (profile.ntrpRating * 2) % 1 !== 0) {
       throw new BadRequestException(t('errors.users.ntrpStep'));
     }
+    const current = await this.prisma.playerProfile.findUnique({ where: { userId }, select: { avatarUrl: true } });
+    this.media.assertOwn(current?.avatarUrl, profile.avatarUrl);
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -105,6 +111,7 @@ export class UsersService {
         update: profileData,
       }),
     ]);
+    if (profile.avatarUrl !== undefined) await this.media.release(current?.avatarUrl, profile.avatarUrl);
     return this.getMeWithProfile(userId);
   }
 

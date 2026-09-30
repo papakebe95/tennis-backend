@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AffiliationStatus, OrganizationType, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
+import { MediaService } from '../../uploads/media.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { orderBy, pageArgs, searchText, toPage } from '../../common/pagination.js';
 import { t } from '../../i18n/i18n.js';
@@ -65,6 +66,7 @@ export class OrganizationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly media: MediaService,
   ) {}
 
   async list(query: ListOrganizationsQueryDto) {
@@ -161,6 +163,7 @@ export class OrganizationsService {
     }
     const city = dto.cityId ? await this.prisma.city.findUnique({ where: { id: dto.cityId } }) : null;
     if (dto.cityId && !city) throw new NotFoundException(t('errors.accessRequests.cityNotFound'));
+    this.media.assertOwn([], dto.logoUrl);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const organization = await tx.organization.create({
@@ -243,6 +246,7 @@ export class OrganizationsService {
 
   async updateProfile(actorId: string, id: string, type: OrganizationType, dto: OrganizationProfileDto) {
     const org = await this.profile(id, type);
+    this.media.assertOwn(org.logoUrl, dto.logoUrl);
     const data = {
       name: dto.name,
       description: dto.description,
@@ -270,6 +274,7 @@ export class OrganizationsService {
         tx,
       );
     });
+    if (dto.logoUrl !== undefined) await this.media.release(org.logoUrl, dto.logoUrl);
     return this.profile(id, type);
   }
 

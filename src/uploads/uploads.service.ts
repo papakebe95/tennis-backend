@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 // Type-only import: pulls in @types/multer's `declare global { namespace
 // Express { namespace Multer { ... } } }` augmentation so Express.Multer.File
 // resolves below, without a runtime `require('multer')`. The project's
@@ -32,6 +32,7 @@ export interface SavedUpload {
 // not touching UploadsController or any other caller.
 @Injectable()
 export class UploadsService {
+  private readonly logger = new Logger(UploadsService.name);
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly publicUrl: string;
@@ -85,5 +86,27 @@ export class UploadsService {
       url: `${this.publicUrl}/${key}`,
       path: key,
     };
+  }
+
+  /** Storage key of one of our public URLs ("clubs/<uuid>.jpg"), else null. */
+  keyOf(url: string | null | undefined): string | null {
+    if (!url || !url.startsWith(`${this.publicUrl}/`)) return null;
+    const key = url.slice(this.publicUrl.length + 1);
+    return /^[a-z]+\/[0-9a-f-]{36}\.(jpg|png|webp)$/.test(key) ? key : null;
+  }
+
+  /**
+   * Deletes stored objects. Best effort: a failure is logged, never thrown,
+   * since the database change that freed them has already been saved.
+   */
+  async remove(keys: string[]): Promise<void> {
+    if (!keys.length) return;
+    try {
+      await this.client.send(
+        new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: keys.map((Key) => ({ Key })), Quiet: true } }),
+      );
+    } catch (error) {
+      this.logger.warn(`Could not delete ${keys.length} media object(s): ${String(error)}`);
+    }
   }
 }

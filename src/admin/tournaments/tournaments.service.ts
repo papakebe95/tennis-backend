@@ -16,6 +16,7 @@ import {
   RoleScope,
   UserStatus,
 } from '@prisma/client';
+import { MediaService } from '../../uploads/media.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { AuthzService } from '../../authz/authz.service.js';
 import { COMPETITION_ORGANIZER_ROLE_KEY } from '../../authz/default-roles.js';
@@ -94,6 +95,7 @@ export class TournamentsService {
     private readonly notifications: NotificationsService,
     private readonly grants: RoleGrantsService,
     private readonly events: EventsService,
+    private readonly media: MediaService,
   ) {}
 
   // Lists -------------------------------------------------------------
@@ -300,6 +302,7 @@ export class TournamentsService {
     }
     await this.assertVenue(venueClubId);
     this.assertDates(dto.startDate, dto.endDate, dto.registrationClosesAt ?? null);
+    this.media.assertOwn([], dto.bannerUrl);
 
     const competition = await this.prisma.$transaction(async (tx) => {
       const created = await tx.competition.create({
@@ -364,6 +367,7 @@ export class TournamentsService {
     const before = await this.competition(id);
     if (!isEditable(before.status)) throw new ConflictException(t('errors.tournaments.notEditable'));
     if (dto.clubId !== undefined) await this.assertVenue(dto.clubId);
+    this.media.assertOwn(before.bannerUrl, dto.bannerUrl);
     this.assertDates(
       dto.startDate ?? before.startDate,
       dto.endDate ?? before.endDate,
@@ -388,6 +392,7 @@ export class TournamentsService {
         tx,
       );
     });
+    if (dto.bannerUrl !== undefined) await this.media.release(before.bannerUrl, dto.bannerUrl);
     return this.detail(id);
   }
 

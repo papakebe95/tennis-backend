@@ -9,6 +9,7 @@ import {
   ProductStatus,
   PurchaseRequestStatus,
 } from '@prisma/client';
+import { MediaService } from '../uploads/media.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { ListProductsQueryDto } from './dto/list-products-query.dto.js';
@@ -28,7 +29,10 @@ const PUBLIC_STATUSES: ProductStatus[] = [
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly media: MediaService,
+  ) {}
 
   // The marketplace's categories, in display order. `value` is the code that
   // products carry and that create/update/list accept.
@@ -159,6 +163,7 @@ export class ProductsService {
   }
 
   async create(userId: string, dto: CreateProductDto) {
+    this.media.assertOwn([], dto.photos);
     const categoryId = await this.categoryIdFor(dto.category);
     const product = await this.prisma.product.create({
       data: {
@@ -179,6 +184,9 @@ export class ProductsService {
 
   async update(userId: string, productId: string, dto: UpdateProductDto) {
     await this.assertOwnedAndActive(userId, productId);
+    const existing = await this.prisma.product.findUnique({ where: { id: productId }, select: { photos: true } });
+    const photosBefore = existing?.photos ?? [];
+    this.media.assertOwn(photosBefore, dto.photos);
     const categoryId =
       dto.category === undefined
         ? undefined
@@ -198,6 +206,7 @@ export class ProductsService {
       },
       select: productSummarySelect,
     });
+    if (dto.photos) await this.media.release(photosBefore, dto.photos);
     return withCategoryCode(product);
   }
 

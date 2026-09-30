@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BookingStatus, CourtStatus, Prisma } from '@prisma/client';
+import { MediaService } from '../../uploads/media.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import {
   HoursError,
@@ -46,6 +47,7 @@ export class ClubsAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly media: MediaService,
   ) {}
 
   async profile(clubId: string) {
@@ -98,6 +100,10 @@ export class ClubsAdminService {
   async update(actorId: string, clubId: string, dto: UpdateClubDto) {
     const club = await this.prisma.club.findUnique({ where: { id: clubId }, include: { organization: true } });
     if (!club) throw new NotFoundException(t('errors.clubs.notFound'));
+    const kept = <T>(value: T | undefined, current: T) => (value === undefined ? current : value);
+    const imagesBefore = [club.logoUrl, club.bannerUrl, ...club.photos, club.organization.logoUrl];
+    const imagesAfter = [kept(dto.logoUrl, club.logoUrl), kept(dto.bannerUrl, club.bannerUrl), ...kept(dto.photos, club.photos), kept(dto.logoUrl, club.organization.logoUrl)];
+    this.media.assertOwn(imagesBefore, imagesAfter);
     if (dto.cityId && !(await this.prisma.city.findUnique({ where: { id: dto.cityId } }))) {
       throw new NotFoundException(t('errors.accessRequests.cityNotFound'));
     }
@@ -175,6 +181,7 @@ export class ClubsAdminService {
         tx,
       );
     });
+    await this.media.release(imagesBefore, imagesAfter);
     return this.profile(clubId);
   }
 
@@ -208,6 +215,7 @@ export class ClubsAdminService {
   async createCourt(actorId: string, clubId: string, dto: CreateCourtDto) {
     const club = await this.prisma.club.findUnique({ where: { id: clubId } });
     if (!club) throw new NotFoundException(t('errors.clubs.notFound'));
+    this.media.assertOwn([], dto.photos);
     const court = await this.prisma.$transaction(async (tx) => {
       const number =
         dto.number ??
@@ -237,6 +245,7 @@ export class ClubsAdminService {
 
   async updateCourt(actorId: string, courtId: string, dto: CourtDto) {
     const court = await this.findCourt(courtId);
+    this.media.assertOwn(court.photos, dto.photos);
     const data = {
       name: dto.name,
       number: dto.number,
@@ -247,7 +256,7 @@ export class ClubsAdminService {
       photos: dto.photos,
     };
     const changed = Object.keys(dto);
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.court.update({ where: { id: courtId }, data, select: courtSelect });
       await this.audit.record(
         {
@@ -263,6 +272,8 @@ export class ClubsAdminService {
       );
       return updated;
     });
+    if (dto.photos) await this.media.release(court.photos, dto.photos);
+    return updated;
   }
 
   /**

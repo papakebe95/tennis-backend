@@ -240,6 +240,8 @@ export const en = {
       notInfoRequested: 'No information was requested on this request',
     },
     uploads: {
+    foreignUrl: 'Images must be uploaded through the app, not linked from elsewhere',
+    folderForbidden: "You can't upload images here",
       noFile: 'No file provided',
       invalidFolder:
         'Invalid upload folder "{folder}". Allowed folders: {allowed}',

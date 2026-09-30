@@ -240,6 +240,8 @@ export const fr: Messages = {
       notInfoRequested: 'Aucune information n’a été demandée sur cette demande',
     },
     uploads: {
+    foreignUrl: "Les images doivent être envoyées depuis l'application, pas liées depuis un autre site",
+    folderForbidden: "Vous ne pouvez pas envoyer d'images ici",
       noFile: 'Aucun fichier fourni',
       invalidFolder:
         'Dossier de téléversement invalide « {folder} ». Dossiers autorisés : {allowed}',

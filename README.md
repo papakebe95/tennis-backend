@@ -397,6 +397,22 @@ Rules enforced server-side:
   - federation: affiliated clubs, players by classification and gender
 - **Federation ranking:** federation players ordered by season points from OFFICIAL matches (tournament results), using the same points as the app.
 
+### Media (Cloudflare R2)
+
+Images are uploaded with `POST /uploads/:folder` (multipart `file`; JPEG, PNG or WebP, 5 MB max) to the R2 bucket set by `R2_*`, and the returned public URL is saved on the record.
+
+| Folder | Used for | Needs |
+|---|---|---|
+| `clubs` | club logo, banner, photos | `club.update` |
+| `courts` | court photos | `court.manage` |
+| `organizations` | federation / organization logos | `organization.create`, `organization.manage`, `federation.update` or `club.update` |
+| `tournaments` | tournament banners | `tournament.create` or `tournament.update` |
+| `avatars`, `products` | player avatars, marketplace photos | signed in |
+
+- **Only our uploads can be saved** (`MediaService.assertOwn`): a newly set image must come from the bucket (`MEDIA_NOT_UPLOADED` otherwise). Images already on a record, such as seeded ones, may stay.
+- **Replaced or removed images are deleted from R2** after the save (`MediaService.release`). This is best effort: a failed delete is logged, never thrown. It covers club, organization, court, tournament, avatar and product images.
+- Images uploaded but never saved (an abandoned form) stay in the bucket. An R2 lifecycle rule or a periodic sweep can remove them later.
+
 ### Access requests (sign-up for administrators and organizers)
 
 - `GET /access-requests/options` (public): profiles offered at sign-up, plus countries and cities.
