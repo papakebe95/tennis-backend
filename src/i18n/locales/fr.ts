@@ -188,6 +188,11 @@ export const fr: Messages = {
       needsScore: 'Un match terminé doit avoir un score',
       onlyRecorderDeletes:
         'Seul le joueur qui a enregistré le match peut le supprimer',
+      pickPlayer: 'Choisissez le premier joueur ou saisissez un nom',
+      refereeIsPlayer: "Vous ne pouvez pas arbitrer un match auquel vous jouez",
+      samePlayer: 'Les deux joueurs doivent être des personnes différentes',
+      alreadyAnswered: "Vous avez déjà répondu pour ce match, ou n'avez rien à confirmer",
+      refereeFieldsInPlayerMode: "Le premier joueur ne se choisit que lorsque vous arbitrez",
     },
     notifications: { notFound: 'Notification introuvable' },
     members: {
@@ -567,6 +572,31 @@ export const fr: Messages = {
       win: 'Vous avez gagné',
       loss: 'Vous avez perdu',
       unfinished: 'Inachevé',
+    },
+    matchConfirmationRequested: {
+      title: 'Confirmez le résultat de votre match',
+      player: {
+        body: '{recorderName} a enregistré votre {outcome}. Vous confirmez ?',
+        win: 'victoire',
+        loss: 'défaite',
+        unfinished: 'match inachevé',
+      },
+      referee: {
+        body: '{recorderName} a arbitré votre match : {outcome}. Vous confirmez le résultat ?',
+        win: 'vous avez gagné',
+        loss: 'vous avez perdu',
+        unfinished: 'inachevé',
+      },
+    },
+    matchConfirmed: {
+      title: 'Résultat du match confirmé',
+      body: '{playerName} a confirmé le résultat. Il compte désormais.',
+      withScore: '{playerName} a confirmé le résultat {score}. Il compte désormais.',
+    },
+    matchRejected: {
+      title: 'Résultat du match refusé',
+      body: '{playerName} a refusé le résultat. Le match ne comptera pas.',
+      withReason: '{playerName} a refusé le résultat : « {reason} ». Le match ne comptera pas.',
     },
   },
 };

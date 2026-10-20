@@ -21,6 +21,9 @@ export type NotificationKey =
   | 'newGear'
   | 'welcome'
   | 'matchRecorded'
+  | 'matchConfirmationRequested'
+  | 'matchConfirmed'
+  | 'matchRejected'
   | 'accessRequestSubmitted'
   | 'accessApproved'
   | 'accessRejected'
@@ -47,7 +50,7 @@ export type NotificationKey =
   | 'membershipDeclined';
 
 /** Language-neutral facts (JSON-safe), stored so the text can be re-rendered. */
-export type NotificationParams = Record<string, string | number | null>;
+export type NotificationParams = Record<string, string | number | boolean | null>;
 
 // Club hours are treated as UTC everywhere (see CourtsService), so slot times
 // are spoken in UTC too, or "18:00" would mean different things in the app and
@@ -80,10 +83,15 @@ export function renderNotification(
   params: NotificationParams,
   lang: Lang,
 ): { title: string; body: string } {
-  const text: Record<string, string | number | null> = { ...params };
+  const text: Record<string, string | number | null> = {};
+  for (const [name, value] of Object.entries(params)) {
+    if (typeof value !== 'boolean') text[name] = value;
+  }
   if (typeof params.start === 'string') {
     text.slot = slot(new Date(params.start), lang);
   }
+  // Sub-keys of `key` to word the body with, when it has variants.
+  let bodyKey = 'body';
   if (key === 'matchRecorded') {
     const outcome = t(
       `notifications.matchRecorded.${
@@ -98,13 +106,27 @@ export function renderNotification(
     );
     text.outcome = params.score ? `${outcome} ${params.score}` : outcome;
   }
+  if (key === 'matchConfirmationRequested') {
+    const variant = params.refereed ? 'referee' : 'player';
+    const outcome = t(
+      `notifications.matchConfirmationRequested.${variant}.${
+        params.result === 'WIN' ? 'win' : params.result === 'LOSS' ? 'loss' : 'unfinished'
+      }`,
+      undefined,
+      lang,
+    );
+    text.outcome = params.score ? `${outcome} ${params.score}` : outcome;
+    bodyKey = `${variant}.body`;
+  }
+  if (key === 'matchConfirmed' && params.score) bodyKey = 'withScore';
+  if (key === 'matchRejected' && params.reason) bodyKey = 'withReason';
   if (key === 'tournamentInterrupted' && typeof params.reasonCode === 'string') {
     const reason = t(`tournamentInterruptionReasons.${params.reasonCode}` as MessageKey, undefined, lang);
     text.reason = params.note ? `${reason} (${params.note})` : reason;
   }
   return {
     title: t(`notifications.${key}.title` as MessageKey, text, lang),
-    body: t(`notifications.${key}.body` as MessageKey, text, lang),
+    body: t(`notifications.${key}.${bodyKey}` as MessageKey, text, lang),
   };
 }
 
@@ -203,7 +225,36 @@ export const scoreLine = (sets: SetLine[]) =>
     )
     .join(' ');
 
-/** `result` and `sets` are from the notified player's point of view. */
+/**
+ * Asks a player to confirm a match someone else recorded (their opponent, or a
+ * referee). `result` and `sets` are from the notified player's point of view.
+ */
+export const matchConfirmationRequested = (
+  matchId: string,
+  recorderName: string,
+  refereed: boolean,
+  result: 'WIN' | 'LOSS' | null,
+  sets: SetLine[],
+): NotifyInput =>
+  build(
+    NotificationType.MATCH,
+    'matchConfirmationRequested',
+    { recorderName, refereed, result, score: scoreLine(sets) },
+    `/play/match/${matchId}`,
+  );
+
+/** Tells the recorder a player confirmed; `sets` from the recorder's side. */
+export const matchConfirmed = (matchId: string, playerName: string, sets: SetLine[]): NotifyInput =>
+  build(NotificationType.MATCH, 'matchConfirmed', { playerName, score: scoreLine(sets) }, `/play/match/${matchId}`);
+
+export const matchRejected = (matchId: string, playerName: string, reason: string | null): NotifyInput =>
+  build(NotificationType.MATCH, 'matchRejected', { playerName, reason }, `/play/match/${matchId}`);
+
+/**
+ * No longer sent (new matches ask for confirmation instead); kept so stored
+ * notifications still render. `result` and `sets` are from the notified
+ * player's point of view.
+ */
 export const matchRecorded = (
   matchId: string,
   recorderName: string,

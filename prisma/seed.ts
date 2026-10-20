@@ -10,6 +10,7 @@ import {
   CompetitionFormat,
   CompetitionStatus,
   FinalSetFormat,
+  MatchConfirmation,
   MatchStatus,
   NotificationType,
   PlayerSide,
@@ -1064,8 +1065,13 @@ async function seedMatches() {
 
       await prisma.match.create({
         data: {
+          recordedById: user.id,
           player1Id: user.id,
           player2Id: opponentUser?.id ?? null,
+          // Seeded history counts, as if every opponent had confirmed it.
+          player2Confirmation: opponentUser
+            ? MatchConfirmation.CONFIRMED
+            : MatchConfirmation.NOT_REGISTERED,
           player2Name:
             'guest' in seed.opponent ? seed.opponent.guest : null,
           location: seed.location,

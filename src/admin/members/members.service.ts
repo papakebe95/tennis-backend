@@ -288,7 +288,10 @@ export class MembersService {
           playedAt: true,
           matchType: true,
           status: true,
+          // PENDING / REJECTED results don't count; the back-office greys them out.
+          validation: true,
           winnerId: true,
+          player1Name: true,
           player2Name: true,
           club: { select: { name: true } },
           player1: { select: { id: true, firstname: true, lastname: true } },

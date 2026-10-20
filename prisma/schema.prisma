@@ -392,6 +392,7 @@ model User {
   partnerRequests        PartnerRequest[]
   matchesAsPlayer1       Match[]                   @relation("MatchPlayer1")
   matchesAsPlayer2       Match[]                   @relation("MatchPlayer2")
+  matchesRecorded        Match[]                   @relation("MatchRecorder")
   matchesWon             Match[]                   @relation("MatchWinner")
   competitionParticipant CompetitionParticipant[]
   competitionPartnerOf   CompetitionParticipant[]  @relation("ParticipantPartner")
@@ -1073,13 +1074,41 @@ model PartnerMatchCandidate {
 // Match recording & scoring
 // ---------------------------------------------------------------------------
 
+// Each registered player who did not record a match is asked to confirm it.
+enum MatchConfirmation {
+  NOT_REGISTERED // that side is a guest
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum MatchValidation {
+  PENDING // someone still has to answer, nobody rejected
+  VALIDATED // everyone asked confirmed (or nobody to ask)
+  REJECTED // at least one asked player rejected
+}
+
 model Match {
   id            String            @id @default(cuid())
-  // player1 is always the user who recorded the match.
-  player1Id     String
+  // Who scored/saved it: player1, or a referee who didn't play. Null for
+  // tournament results (validated in the back-office).
+  recordedById  String?
+  refereed      Boolean           @default(false)
+  // Side 1: the recording player, or a referee's "me" side. Null for a guest
+  // ("player1Name"), which only a referee can record.
+  player1Id     String?
+  player1Name   String?
   // Registered opponent; null for a guest ("player2Name") or an unknown one.
   player2Id     String?
   player2Name   String?
+  player1Confirmation MatchConfirmation @default(CONFIRMED)
+  player2Confirmation MatchConfirmation @default(NOT_REGISTERED)
+  player1RespondedAt  DateTime?
+  player2RespondedAt  DateTime?
+  player1RejectReason String?
+  player2RejectReason String?
+  // Only VALIDATED matches count in stats and rankings.
+  validation    MatchValidation   @default(VALIDATED)
   clubId        String?
   courtId       String?
   location      String?
@@ -1104,7 +1133,8 @@ model Match {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
-  player1 User   @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("MatchRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  player1 User?  @relation("MatchPlayer1", fields: [player1Id], references: [id], onDelete: Cascade)
   player2 User?  @relation("MatchPlayer2", fields: [player2Id], references: [id], onDelete: SetNull)
   winner  User?  @relation("MatchWinner", fields: [winnerId], references: [id], onDelete: SetNull)
   club    Club?  @relation(fields: [clubId], references: [id], onDelete: SetNull)
@@ -1115,6 +1145,7 @@ model Match {
 
   @@index([player1Id, playedAt])
   @@index([player2Id, playedAt])
+  @@index([recordedById, startedAt])
 }
 
 model MatchSet {

@@ -114,7 +114,7 @@ export class AdminUsersService {
           },
           orderBy: [{ revokedAt: { sort: 'desc', nulls: 'first' } }, { grantedAt: 'desc' }],
         },
-        _count: { select: { bookings: true, matchesAsPlayer1: true } },
+        _count: { select: { bookings: true, matchesRecorded: true } },
       },
     });
     if (!user) throw new NotFoundException(t('errors.users.notFound'));
@@ -122,7 +122,7 @@ export class AdminUsersService {
     return {
       ...rest,
       profile: playerProfile,
-      stats: { bookings: _count.bookings, matchesRecorded: _count.matchesAsPlayer1 },
+      stats: { bookings: _count.bookings, matchesRecorded: _count.matchesRecorded },
       grants: roles.map(({ role: { permissions, ...role }, ...grant }) => ({
         ...grant,
         role,

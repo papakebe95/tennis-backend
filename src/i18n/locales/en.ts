@@ -188,6 +188,11 @@ export const en = {
       needsWinner: 'A completed match needs a winner',
       needsScore: 'A completed match needs a score',
       onlyRecorderDeletes: 'Only the player who recorded it can delete a match',
+      pickPlayer: 'Pick the first player or type a name',
+      refereeIsPlayer: "You can't referee a match you play in",
+      samePlayer: 'The two players must be different people',
+      alreadyAnswered: 'You have already answered for this match, or have nothing to confirm',
+      refereeFieldsInPlayerMode: 'The first player can only be chosen when you referee',
     },
     notifications: { notFound: 'Notification not found' },
     members: {
@@ -569,6 +574,31 @@ export const en = {
       win: 'You won',
       loss: 'You lost',
       unfinished: 'Unfinished',
+    },
+    matchConfirmationRequested: {
+      title: 'Confirm your match result',
+      player: {
+        body: '{recorderName} recorded your {outcome}. Confirm it?',
+        win: 'win',
+        loss: 'loss',
+        unfinished: 'unfinished match',
+      },
+      referee: {
+        body: '{recorderName} refereed your match: {outcome}. Confirm the result?',
+        win: 'you won',
+        loss: 'you lost',
+        unfinished: 'unfinished',
+      },
+    },
+    matchConfirmed: {
+      title: 'Match result confirmed',
+      body: '{playerName} confirmed the result. It now counts.',
+      withScore: '{playerName} confirmed the result {score}. It now counts.',
+    },
+    matchRejected: {
+      title: 'Match result rejected',
+      body: "{playerName} rejected the result. The match won't count.",
+      withReason: '{playerName} rejected the result: "{reason}". The match won\'t count.',
     },
   },
 } as const;

@@ -1,4 +1,4 @@
-import { PlayerSide, RecordedMatchType } from '@prisma/client';
+import { MatchConfirmation, PlayerSide, RecordedMatchType } from '@prisma/client';
 import { t } from '../i18n/i18n.js';
 
 // ---------------------------------------------------------------------------
@@ -58,9 +58,12 @@ export function tierFor(points: number) {
   };
 }
 
+// Rows should already be VALIDATED; a side still only counts once confirmed.
 export interface RankedMatchRow {
-  player1Id: string;
+  player1Id: string | null;
   player2Id: string | null;
+  player1Confirmation: MatchConfirmation;
+  player2Confirmation: MatchConfirmation;
   winnerSide: PlayerSide;
   matchType: RecordedMatchType;
   playedAt: Date;
@@ -91,13 +94,18 @@ export function aggregateSeason(rows: RankedMatchRow[]): Map<string, PlayerSeaso
     (a, b) => b.playedAt.getTime() - a.playedAt.getTime(),
   );
   for (const row of newestFirst) {
-    const registeredOpponent = row.player2Id !== null;
-    const sides: [string | null, boolean][] = [
-      [row.player1Id, row.winnerSide === PlayerSide.PLAYER1],
-      [row.player2Id, row.winnerSide === PlayerSide.PLAYER2],
+    const confirmed = [
+      !!row.player1Id && row.player1Confirmation === MatchConfirmation.CONFIRMED,
+      !!row.player2Id && row.player2Confirmation === MatchConfirmation.CONFIRMED,
     ];
-    for (const [userId, won] of sides) {
-      if (!userId) continue;
+    const sides: [string | null, boolean, boolean][] = [
+      [row.player1Id, row.winnerSide === PlayerSide.PLAYER1, confirmed[0]],
+      [row.player2Id, row.winnerSide === PlayerSide.PLAYER2, confirmed[1]],
+    ];
+    for (const [i, [userId, won, counts]] of sides.entries()) {
+      if (!userId || !counts) continue;
+      // Full points need a registered opponent who confirmed the result.
+      const registeredOpponent = confirmed[1 - i];
       const entry = line(userId);
       entry.points += matchPoints(row.matchType, won, registeredOpponent);
       if (won) entry.wins++;

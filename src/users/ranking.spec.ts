@@ -1,4 +1,4 @@
-import { PlayerSide, RecordedMatchType } from '@prisma/client';
+import { MatchConfirmation, PlayerSide, RecordedMatchType } from '@prisma/client';
 import {
   aggregateSeason,
   matchPoints,
@@ -12,6 +12,8 @@ const row = (
 ): RankedMatchRow => ({
   player1Id: 'a',
   player2Id: 'b',
+  player1Confirmation: MatchConfirmation.CONFIRMED,
+  player2Confirmation: MatchConfirmation.CONFIRMED,
   winnerSide: PlayerSide.PLAYER1,
   matchType: RecordedMatchType.OFFICIAL,
   playedAt: new Date(Date.UTC(2026, 2, over.day ?? 1)),
@@ -73,6 +75,28 @@ describe('aggregateSeason', () => {
       row({ day: 9, winnerSide: PlayerSide.PLAYER2 }),
     ]);
     expect(season.get('a')?.results).toEqual(['LOSS', 'WIN']);
+  });
+
+  it('skips a side that is still pending or rejected', () => {
+    for (const status of [MatchConfirmation.PENDING, MatchConfirmation.REJECTED]) {
+      const season = aggregateSeason([row({ player2Confirmation: status })]);
+      expect(season.has('b')).toBe(false);
+    }
+  });
+
+  it('needs a registered opponent who confirmed for full points', () => {
+    const pending = aggregateSeason([row({ player2Confirmation: MatchConfirmation.PENDING })]);
+    expect(pending.get('a')?.points).toBe(50);
+    const confirmed = aggregateSeason([row()]);
+    expect(confirmed.get('a')?.points).toBe(100);
+  });
+
+  it('credits nobody for a guest side', () => {
+    const season = aggregateSeason([
+      row({ player1Id: null, player1Confirmation: MatchConfirmation.NOT_REGISTERED }),
+    ]);
+    expect(season.get('b')).toMatchObject({ points: 10, losses: 1 });
+    expect(season.size).toBe(1);
   });
 });
 

@@ -31,7 +31,8 @@ export class TiebreakScoreDto {
   opp!: number;
 }
 
-// Scores are always from the recording user's point of view ("me" / "opp").
+// Scores are always from the recording user's point of view ("me" / "opp");
+// for a referee, "me" is side 1 and "opp" side 2.
 export class SetScoreDto {
   @IsInt()
   @Min(0)
@@ -54,7 +55,25 @@ export class SetScoreDto {
 }
 
 export class CreateMatchDto {
-  // Registered opponent...
+  // The caller referees and doesn't play. (An older client's `shareWith` is
+  // stripped by the validation pipe.)
+  @IsOptional()
+  @IsBoolean()
+  refereeMode?: boolean;
+
+  // Referee mode only: side 1 ("me") is a registered player...
+  @IsOptional()
+  @IsString()
+  playerUserId?: string;
+
+  // ...or a guest typed by hand.
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  playerName?: string;
+
+  // Registered opponent (side 2)...
   @IsOptional()
   @IsString()
   opponentUserId?: string;

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class ListMatchesQueryDto {
   @IsOptional()
@@ -14,4 +14,9 @@ export class ListMatchesQueryDto {
   @Min(1)
   @Max(50)
   pageSize?: number = 20;
+
+  // Matches I played, or matches I refereed; both when omitted.
+  @IsOptional()
+  @IsIn(['PLAYER', 'REFEREE'])
+  role?: 'PLAYER' | 'REFEREE';
 }

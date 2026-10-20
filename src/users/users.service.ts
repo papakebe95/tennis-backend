@@ -7,6 +7,7 @@ import {
 import {
   AvailabilityStatus,
   MatchStatus,
+  MatchValidation,
   PlayerLevel,
   PhoneLabel,
   Prisma,
@@ -198,6 +199,7 @@ export class UsersService {
       where: {
         winnerSide: { not: null },
         status: { in: [MatchStatus.COMPLETED, MatchStatus.UNFINISHED] },
+        validation: MatchValidation.VALIDATED,
         playedAt: {
           gte: new Date(Date.UTC(year, 0, 1)),
           lt: new Date(Date.UTC(year + 1, 0, 1)),
@@ -206,6 +208,8 @@ export class UsersService {
       select: {
         player1Id: true,
         player2Id: true,
+        player1Confirmation: true,
+        player2Confirmation: true,
         winnerSide: true,
         matchType: true,
         playedAt: true,

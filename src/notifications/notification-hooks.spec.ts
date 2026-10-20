@@ -1,7 +1,6 @@
 import { BookingStatus } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingsService } from '../bookings/bookings.service.js';
-import { MatchesService } from '../matches/matches.service.js';
 import { PurchaseRequestsService } from '../marketplace/purchase-requests.service.js';
 
 // These check that the feature services raise the right notifications; the
@@ -198,81 +197,5 @@ describe('purchase requests', () => {
   });
 });
 
-describe('matches', () => {
-  const dto = (opponent: { opponentUserId?: string; opponentName?: string }) =>
-    ({
-      ...opponent,
-      matchType: 'FRIENDLY',
-      bestOf: 3,
-      noAd: false,
-      finalSet: 'TIEBREAK',
-      status: 'COMPLETED',
-      winner: 'ME',
-      sets: [
-        { me: 6, opp: 3 },
-        { me: 6, opp: 4 },
-      ],
-      startedAt: '2026-09-21T10:00:00Z',
-      endedAt: '2026-09-21T11:00:00Z',
-      totalSeconds: 3600,
-      playSeconds: 1800,
-      myPoints: 50,
-      oppPoints: 40,
-    }) as never;
+// Match confirmation notifications are covered in matches.service.spec.ts.
 
-  const created = (player2Id: string | null) => ({
-    id: 'm1',
-    player1Id: 'me',
-    player2Id,
-    player2Name: player2Id ? null : 'Guest Gary',
-    player1: { id: 'me', firstname: 'Awa', lastname: 'Diop' },
-    player2: player2Id
-      ? { id: player2Id, firstname: 'Omar', lastname: 'Fall' }
-      : null,
-    status: 'COMPLETED',
-    matchType: 'FRIENDLY',
-    bestOf: 3,
-    noAd: false,
-    finalSet: 'TIEBREAK',
-    playedAt: new Date(),
-    winnerSide: 'PLAYER1',
-    sets: [
-      {
-        setNumber: 1,
-        player1Games: 6,
-        player2Games: 3,
-        isTiebreak: false,
-        isSuperTiebreak: false,
-        tiebreakPlayer1Points: null,
-        tiebreakPlayer2Points: null,
-      },
-    ],
-  });
-
-  const build = (player2Id: string | null) => {
-    const prisma = {
-      user: { findUnique: vi.fn().mockResolvedValue({ id: player2Id }) },
-      match: {
-        findFirst: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue(created(player2Id)),
-      },
-    };
-    return new MatchesService(prisma as never, notifications as never);
-  };
-
-  it('tells a registered opponent, from their side of the score', async () => {
-    await build('opp').create('me', dto({ opponentUserId: 'opp' }));
-
-    expect(notifications.notify).toHaveBeenCalledTimes(1);
-    const [userId, note] = notifications.notify.mock.calls[0];
-    expect(userId).toBe('opp');
-    expect(note.type).toBe('MATCH');
-    expect(note.body).toBe('Awa Diop recorded a match with you. You lost 3-6.');
-    expect(note.route).toBe('/play/match/m1');
-  });
-
-  it('stays quiet for a guest opponent', async () => {
-    await build(null).create('me', dto({ opponentName: 'Guest Gary' }));
-    expect(notifications.notify).not.toHaveBeenCalled();
-  });
-});

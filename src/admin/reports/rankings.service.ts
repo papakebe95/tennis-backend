@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { AffiliationStatus, MemberStatus, OrganizationType, RecordedMatchType } from '@prisma/client';
+import { AffiliationStatus, MatchValidation, MemberStatus, OrganizationType, RecordedMatchType } from '@prisma/client';
 import { csvDocument } from '../../common/csv.js';
 import { t } from '../../i18n/i18n.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -52,10 +52,19 @@ export class RankingsService {
       where: {
         matchType: RecordedMatchType.OFFICIAL,
         winnerSide: { not: null },
+        validation: MatchValidation.VALIDATED,
         playedAt: { gte: seasonStart, lt: seasonEnd },
         OR: [{ player1Id: { in: ids } }, { player2Id: { in: ids } }],
       },
-      select: { player1Id: true, player2Id: true, winnerSide: true, matchType: true, playedAt: true },
+      select: {
+        player1Id: true,
+        player2Id: true,
+        player1Confirmation: true,
+        player2Confirmation: true,
+        winnerSide: true,
+        matchType: true,
+        playedAt: true,
+      },
     });
     const season = aggregateSeason(matches.map((m) => ({ ...m, winnerSide: m.winnerSide! })));
     const ranked = rankPlayers(ids.map((id) => season.get(id) ?? { userId: id, points: 0, wins: 0, losses: 0, results: [] }));

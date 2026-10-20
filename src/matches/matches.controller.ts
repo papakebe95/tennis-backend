@@ -14,6 +14,7 @@ import type { AuthenticatedUser } from '../auth/jwt.strategy.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { CreateMatchDto } from './dto/create-match.dto.js';
 import { ListMatchesQueryDto } from './dto/list-matches-query.dto.js';
+import { RejectMatchDto } from './dto/reject-match.dto.js';
 import { MatchesService } from './matches.service.js';
 
 @Controller('matches')
@@ -35,6 +36,12 @@ export class MatchesController {
     return this.matchesService.summary(currentUser.userId);
   }
 
+  // Matches waiting for my confirmation. Literal route, before ':id' too.
+  @Get('pending')
+  pending(@CurrentUser() currentUser: AuthenticatedUser) {
+    return this.matchesService.pending(currentUser.userId);
+  }
+
   @Get(':id')
   findOne(
     @CurrentUser() currentUser: AuthenticatedUser,
@@ -49,6 +56,25 @@ export class MatchesController {
     @Body() dto: CreateMatchDto,
   ) {
     return this.matchesService.create(currentUser.userId, dto);
+  }
+
+  @Post(':id/confirm')
+  @HttpCode(200)
+  confirm(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.matchesService.confirm(currentUser.userId, id);
+  }
+
+  @Post(':id/reject')
+  @HttpCode(200)
+  reject(
+    @CurrentUser() currentUser: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: RejectMatchDto,
+  ) {
+    return this.matchesService.reject(currentUser.userId, id, dto.reason);
   }
 
   @Delete(':id')

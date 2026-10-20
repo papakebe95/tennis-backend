@@ -6,7 +6,9 @@ import {
   CourtStatus,
   EventDiscipline,
   MatchOutcome,
+  MatchConfirmation,
   MatchStatus,
+  MatchValidation,
   PlayerSide,
   Prisma,
   RecordedMatchType,
@@ -493,6 +495,10 @@ export class MatchesService {
       status: match.outcome === MatchOutcome.RETIRED ? MatchStatus.UNFINISHED : MatchStatus.COMPLETED,
       winnerId: winnerUser,
       winnerSide: winnerSide === 1 ? PlayerSide.PLAYER1 : PlayerSide.PLAYER2,
+      // Validated in the back-office: no recorder, nothing for players to confirm.
+      player1Confirmation: p1.userId ? MatchConfirmation.CONFIRMED : MatchConfirmation.NOT_REGISTERED,
+      player2Confirmation: p2.userId ? MatchConfirmation.CONFIRMED : MatchConfirmation.NOT_REGISTERED,
+      validation: MatchValidation.VALIDATED,
       notes: `${match.round.competition.name} · ${match.round.event.name}`,
     };
     const setRows = sets.map((s, i) => ({
